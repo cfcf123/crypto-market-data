@@ -35,14 +35,15 @@ def fetch_price(symbol):
 
 def normalize(rows, source, interval, now_ms, bybit=False, okx=False):
     out=[]
+    duration_ms={"1d":86400000,"12h":43200000,"4h":14400000,"1h":3600000,"15m":900000,"5m":300000}[interval]
     # All normalized rows are chronological and contain closed candles only.
     for r in rows:
         if bybit:
-            ot=int(r[0]); ct=ot
+            ot=int(r[0]); ct=ot+duration_ms-1
             vals=(float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5]))
-            closed=ot < now_ms - 1000
+            closed=ct < now_ms
         elif okx:
-            ot=int(r[0]); ct=ot
+            ot=int(r[0]); ct=ot+duration_ms-1
             vals=(float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5]))
             closed=(len(r)>8 and str(r[8])=="1")
         else:
