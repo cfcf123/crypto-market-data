@@ -37,7 +37,7 @@ class FuturesContextValidationTests(unittest.TestCase):
         self.assertEqual(out["value"], 98765.4)
 
     def test_okx_long_short_ratio(self):
-        data = {"code": "0", "data": [{"longShortAccountRatio": "1.25"}]}
+        data = {"code": "0", "data": [{"ratio": "1.25"}]}
         out = collector.validate_context_response("OKX USDT Swap", "global_long_short_ratio", data)
         self.assertEqual(out["value"], 1.25)
 
