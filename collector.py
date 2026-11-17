@@ -252,14 +252,17 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"2.4",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"2.4","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     for symbol in SYMBOLS:
         item={"spot_price":fetch_price(symbol),"futures_context":fetch_futures_context(symbol),"timeframes":{}}
         for tf in INTERVALS:
             k=fetch_klines(symbol,tf)
-            if "candles" in k:k["indicators"]=indicators(k["candles"])
+            if "candles" in k:
+                k["indicators"]=indicators(k["candles"])
+                k["indicators"]["calculated_from_closed_candles"]=True
+                k["indicators"]["source_exchange"]=k["exchange"]
             item["timeframes"][tf]=k
         result["symbols"][symbol]=item
     os.makedirs("output",exist_ok=True)
