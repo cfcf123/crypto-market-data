@@ -187,7 +187,7 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"2.0",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"2.1",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     for symbol in SYMBOLS:
