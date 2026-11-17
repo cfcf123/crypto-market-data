@@ -164,49 +164,71 @@ def indicators(candles):
      "swing_low_20":min(l[-20:]) if len(l)>=20 else None}
 
 def validate_context_response(provider, metric, data):
-    """Reject HTTP-200 error payloads; only accept structurally valid market data."""
+    """Validate provider payloads and return a comparable normalized metric."""
     if provider == "Binance USD-M Futures":
         if metric == "funding_rate":
             if not isinstance(data, list) or not data or "fundingRate" not in data[0]:
                 raise ValueError("invalid Binance funding response")
-            float(data[0]["fundingRate"])
+            value = float(data[0]["fundingRate"])
         elif metric == "open_interest":
             if not isinstance(data, dict) or "openInterest" not in data:
                 raise ValueError("invalid Binance open-interest response")
-            float(data["openInterest"])
+            value = float(data["openInterest"])
         elif metric == "global_long_short_ratio":
             if not isinstance(data, list) or not data or "longShortRatio" not in data[0]:
                 raise ValueError("invalid Binance long/short response")
-            float(data[0]["longShortRatio"])
+            value = float(data[0]["longShortRatio"])
     elif provider == "Bybit V5 Linear":
         if not isinstance(data, dict) or data.get("retCode") != 0:
             raise ValueError("Bybit retCode=" + str(data.get("retCode") if isinstance(data, dict) else "invalid"))
         rows = data.get("result", {}).get("list", [])
         if not rows:
             raise ValueError("empty Bybit " + metric + " response")
-        field = {"funding_rate":"fundingRate", "open_interest":"openInterest", "global_long_short_ratio":"buyRatio"}[metric]
-        if field not in rows[0]:
-            raise ValueError("missing Bybit field " + field)
-        float(rows[0][field])
+        row = rows[0]
+        if metric == "global_long_short_ratio":
+            if "buyRatio" not in row or "sellRatio" not in row:
+                raise ValueError("missing Bybit buyRatio/sellRatio")
+            sell = float(row["sellRatio"])
+            if sell <= 0: raise ValueError("invalid Bybit sellRatio")
+            value = float(row["buyRatio"]) / sell
+        else:
+            field = {"funding_rate":"fundingRate", "open_interest":"openInterest"}[metric]
+            if field not in row: raise ValueError("missing Bybit field " + field)
+            value = float(row[field])
     elif provider == "OKX USDT Swap":
         if not isinstance(data, dict) or data.get("code") != "0":
             raise ValueError("OKX code=" + str(data.get("code") if isinstance(data, dict) else "invalid"))
         rows = data.get("data", [])
-        if not rows:
-            raise ValueError("empty OKX " + metric + " response")
-        field = {"funding_rate":"fundingRate", "open_interest":"oi", "global_long_short_ratio":None}[metric]
-        if field and field not in rows[0]:
-            raise ValueError("missing OKX field " + field)
-        if field:
-            float(rows[0][field])
-    return data
+        if not rows: raise ValueError("empty OKX " + metric + " response")
+        row = rows[0]
+        if metric == "global_long_short_ratio":
+            if "longShortAccountRatio" not in row:
+                raise ValueError("missing OKX longShortAccountRatio")
+            value = float(row["longShortAccountRatio"])
+        elif metric == "funding_rate":
+            if "fundingRate" not in row: raise ValueError("missing OKX fundingRate")
+            value = float(row["fundingRate"])
+        else:
+            field = "oiUsd" if "oiUsd" in row else "oi"
+            if field not in row: raise ValueError("missing OKX oi/oiUsd")
+            value = float(row[field])
+    else:
+        raise ValueError("unsupported provider: " + provider)
+    if not isinstance(value, (int, float)) or not __import__("math").isfinite(value):
+        raise ValueError("non-finite " + metric + " value")
+    if metric == "global_long_short_ratio" and value <= 0:
+        raise ValueError("long/short ratio must be positive")
+    unit = {"funding_rate":"rate_fraction", "open_interest":"provider_native_units",
+            "global_long_short_ratio":"long_accounts_per_short_account"}[metric]
+    return {"value":value,"unit":unit,"raw":data}
 
 def first_ok(calls, metric):
     errors=[]
     for name,fn in calls:
         try:
-            data = validate_context_response(name, metric, fn())
-            return {"source":name,"data":data,"observed_at":datetime.now(timezone.utc).isoformat()}
+            normalized = validate_context_response(name, metric, fn())
+            return {"source":name,"value":normalized["value"],"unit":normalized["unit"],
+                    "data":normalized["raw"],"observed_at":datetime.now(timezone.utc).isoformat()}
         except Exception as e:
             errors.append({"source":name,"error":str(e)})
     return {"status":"unavailable","attempts":errors}
@@ -222,13 +244,15 @@ def fetch_futures_context(symbol):
       ("Binance USD-M Futures",lambda:get_json("https://fapi.binance.com/fapi/v1/openInterest?symbol="+symbol)),
       ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/open-interest?"+qs({"category":"linear","symbol":symbol,"intervalTime":"1h","limit":1}))),
       ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/public/open-interest?"+qs({"instType":"SWAP","instId":inst})))], "open_interest")
+    ccy=symbol.replace("USDT","")
     out["global_long_short_ratio"]=first_ok([
       ("Binance USD-M Futures",lambda:get_json("https://futures-data.binance.com/futures/data/globalLongShortAccountRatio?"+qs({"symbol":symbol,"period":"1h","limit":1}))),
-      ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/account-ratio?"+qs({"category":"linear","symbol":symbol,"period":"1h","limit":1})))], "global_long_short_ratio")
+      ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/account-ratio?"+qs({"category":"linear","symbol":symbol,"period":"1h","limit":1}))),
+      ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?"+qs({"ccy":ccy,"period":"1H"})))], "global_long_short_ratio")
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"2.2",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"2.3",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     for symbol in SYMBOLS:
