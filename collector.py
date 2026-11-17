@@ -202,9 +202,9 @@ def validate_context_response(provider, metric, data):
         if not rows: raise ValueError("empty OKX " + metric + " response")
         row = rows[0]
         if metric == "global_long_short_ratio":
-            if "longShortAccountRatio" not in row:
-                raise ValueError("missing OKX longShortAccountRatio")
-            value = float(row["longShortAccountRatio"])
+            if "ratio" not in row:
+                raise ValueError("missing OKX ratio")
+            value = float(row["ratio"])
         elif metric == "funding_rate":
             if "fundingRate" not in row: raise ValueError("missing OKX fundingRate")
             value = float(row["fundingRate"])
@@ -218,7 +218,7 @@ def validate_context_response(provider, metric, data):
         raise ValueError("non-finite " + metric + " value")
     if metric == "global_long_short_ratio" and value <= 0:
         raise ValueError("long/short ratio must be positive")
-    unit = {"funding_rate":"rate_fraction", "open_interest":"provider_native_units",
+    unit = {"funding_rate":"rate_fraction", "open_interest":("USD" if provider == "OKX USDT Swap" and metric == "open_interest" and "oiUsd" in row else "provider_native_units"),
             "global_long_short_ratio":"long_accounts_per_short_account"}[metric]
     return {"value":value,"unit":unit,"raw":data}
 
@@ -252,7 +252,7 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"2.3",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"2.4",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     for symbol in SYMBOLS:
