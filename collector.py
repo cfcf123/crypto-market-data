@@ -163,11 +163,52 @@ def indicators(candles):
      "swing_high_20":max(h[-20:]) if len(h)>=20 else None,
      "swing_low_20":min(l[-20:]) if len(l)>=20 else None}
 
-def first_ok(calls):
+def validate_context_response(provider, metric, data):
+    """Reject HTTP-200 error payloads; only accept structurally valid market data."""
+    if provider == "Binance USD-M Futures":
+        if metric == "funding_rate":
+            if not isinstance(data, list) or not data or "fundingRate" not in data[0]:
+                raise ValueError("invalid Binance funding response")
+            float(data[0]["fundingRate"])
+        elif metric == "open_interest":
+            if not isinstance(data, dict) or "openInterest" not in data:
+                raise ValueError("invalid Binance open-interest response")
+            float(data["openInterest"])
+        elif metric == "global_long_short_ratio":
+            if not isinstance(data, list) or not data or "longShortRatio" not in data[0]:
+                raise ValueError("invalid Binance long/short response")
+            float(data[0]["longShortRatio"])
+    elif provider == "Bybit V5 Linear":
+        if not isinstance(data, dict) or data.get("retCode") != 0:
+            raise ValueError("Bybit retCode=" + str(data.get("retCode") if isinstance(data, dict) else "invalid"))
+        rows = data.get("result", {}).get("list", [])
+        if not rows:
+            raise ValueError("empty Bybit " + metric + " response")
+        field = {"funding_rate":"fundingRate", "open_interest":"openInterest", "global_long_short_ratio":"buyRatio"}[metric]
+        if field not in rows[0]:
+            raise ValueError("missing Bybit field " + field)
+        float(rows[0][field])
+    elif provider == "OKX USDT Swap":
+        if not isinstance(data, dict) or data.get("code") != "0":
+            raise ValueError("OKX code=" + str(data.get("code") if isinstance(data, dict) else "invalid"))
+        rows = data.get("data", [])
+        if not rows:
+            raise ValueError("empty OKX " + metric + " response")
+        field = {"funding_rate":"fundingRate", "open_interest":"oi", "global_long_short_ratio":None}[metric]
+        if field and field not in rows[0]:
+            raise ValueError("missing OKX field " + field)
+        if field:
+            float(rows[0][field])
+    return data
+
+def first_ok(calls, metric):
     errors=[]
     for name,fn in calls:
-        try:return {"source":name,"data":fn(),"observed_at":datetime.now(timezone.utc).isoformat()}
-        except Exception as e:errors.append({"source":name,"error":str(e)})
+        try:
+            data = validate_context_response(name, metric, fn())
+            return {"source":name,"data":data,"observed_at":datetime.now(timezone.utc).isoformat()}
+        except Exception as e:
+            errors.append({"source":name,"error":str(e)})
     return {"status":"unavailable","attempts":errors}
 
 def fetch_futures_context(symbol):
@@ -176,14 +217,14 @@ def fetch_futures_context(symbol):
     out["funding_rate"]=first_ok([
       ("Binance USD-M Futures",lambda:get_json("https://fapi.binance.com/fapi/v1/fundingRate?"+qs({"symbol":symbol,"limit":1}))),
       ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/funding/history?"+qs({"category":"linear","symbol":symbol,"limit":1}))),
-      ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/public/funding-rate?"+qs({"instId":inst})))])
+      ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/public/funding-rate?"+qs({"instId":inst})))], "funding_rate")
     out["open_interest"]=first_ok([
       ("Binance USD-M Futures",lambda:get_json("https://fapi.binance.com/fapi/v1/openInterest?symbol="+symbol)),
       ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/open-interest?"+qs({"category":"linear","symbol":symbol,"intervalTime":"1h","limit":1}))),
-      ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/public/open-interest?"+qs({"instType":"SWAP","instId":inst})))])
+      ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/public/open-interest?"+qs({"instType":"SWAP","instId":inst})))], "open_interest")
     out["global_long_short_ratio"]=first_ok([
       ("Binance USD-M Futures",lambda:get_json("https://futures-data.binance.com/futures/data/globalLongShortAccountRatio?"+qs({"symbol":symbol,"period":"1h","limit":1}))),
-      ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/account-ratio?"+qs({"category":"linear","symbol":symbol,"period":"1h","limit":1})))])
+      ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/account-ratio?"+qs({"category":"linear","symbol":symbol,"period":"1h","limit":1})))], "global_long_short_ratio")
     return out
 
 def main():
