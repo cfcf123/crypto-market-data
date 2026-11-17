@@ -111,6 +111,40 @@ def rsi(values, period=14):
         dn=(dn*(period-1)+max(-x,0))/period
     return 100 if dn==0 else 100-100/(1+up/dn)
 
+def adx(values_high, values_low, values_close, period=14):
+    if len(values_close) < period * 2 + 1:
+        return None
+    tr, plus_dm, minus_dm = [], [], []
+    for i in range(1, len(values_close)):
+        up = values_high[i] - values_high[i-1]
+        down = values_low[i-1] - values_low[i]
+        plus_dm.append(up if up > down and up > 0 else 0.0)
+        minus_dm.append(down if down > up and down > 0 else 0.0)
+        tr.append(max(values_high[i]-values_low[i],
+                      abs(values_high[i]-values_close[i-1]),
+                      abs(values_low[i]-values_close[i-1])))
+    sm_tr = sum(tr[:period])
+    sm_plus = sum(plus_dm[:period])
+    sm_minus = sum(minus_dm[:period])
+    dx = []
+    for i in range(period, len(tr)):
+        sm_tr = sm_tr - sm_tr / period + tr[i]
+        sm_plus = sm_plus - sm_plus / period + plus_dm[i]
+        sm_minus = sm_minus - sm_minus / period + minus_dm[i]
+        if sm_tr <= 0:
+            continue
+        pdi = 100 * sm_plus / sm_tr
+        mdi = 100 * sm_minus / sm_tr
+        denom = pdi + mdi
+        dx.append(100 * abs(pdi - mdi) / denom if denom else 0.0)
+    if len(dx) < period:
+        return None
+    value = sum(dx[:period]) / period
+    for item in dx[period:]:
+        value = (value * (period - 1) + item) / period
+    return value
+
+
 def indicators(candles):
     c=[x["close"] for x in candles]; h=[x["high"] for x in candles]; l=[x["low"] for x in candles]
     tr=[max(h[i]-l[i],abs(h[i]-c[i-1]),abs(l[i]-c[i-1])) for i in range(1,len(c))]
@@ -125,6 +159,7 @@ def indicators(candles):
      "bollinger20":{"middle":mid,"upper":mid+2*sd if mid is not None else None,
                     "lower":mid-2*sd if mid is not None else None},
      "atr14":sum(tr[-14:])/14 if len(tr)>=14 else None,
+     "adx14":adx(h,l,c,14),
      "swing_high_20":max(h[-20:]) if len(h)>=20 else None,
      "swing_low_20":min(l[-20:]) if len(l)>=20 else None}
 
