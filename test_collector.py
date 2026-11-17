@@ -3,9 +3,11 @@ import collector
 
 
 class FuturesContextValidationTests(unittest.TestCase):
-    def test_binance_funding_valid(self):
+    def test_binance_funding_normalized(self):
         data = [{"fundingRate": "0.0001"}]
-        self.assertEqual(collector.validate_context_response("Binance USD-M Futures", "funding_rate", data), data)
+        out = collector.validate_context_response("Binance USD-M Futures", "funding_rate", data)
+        self.assertEqual(out["value"], 0.0001)
+        self.assertEqual(out["raw"], data)
 
     def test_binance_http_200_error_payload_rejected(self):
         with self.assertRaises(ValueError):
@@ -17,15 +19,31 @@ class FuturesContextValidationTests(unittest.TestCase):
 
     def test_bybit_valid_open_interest(self):
         data = {"retCode": 0, "result": {"list": [{"openInterest": "123.4"}]}}
-        self.assertEqual(collector.validate_context_response("Bybit V5 Linear", "open_interest", data), data)
+        out = collector.validate_context_response("Bybit V5 Linear", "open_interest", data)
+        self.assertEqual(out["value"], 123.4)
+
+    def test_bybit_long_short_ratio_normalized(self):
+        data = {"retCode": 0, "result": {"list": [{"buyRatio": "0.6", "sellRatio": "0.4"}]}}
+        out = collector.validate_context_response("Bybit V5 Linear", "global_long_short_ratio", data)
+        self.assertAlmostEqual(out["value"], 1.5)
 
     def test_okx_code_error_rejected(self):
         with self.assertRaises(ValueError):
             collector.validate_context_response("OKX USDT Swap", "funding_rate", {"code": "50011", "msg": "rate limit", "data": []})
 
-    def test_okx_valid_open_interest(self):
-        data = {"code": "0", "data": [{"oi": "321.0"}]}
-        self.assertEqual(collector.validate_context_response("OKX USDT Swap", "open_interest", data), data)
+    def test_okx_valid_open_interest_usd(self):
+        data = {"code": "0", "data": [{"oi": "321.0", "oiUsd": "98765.4"}]}
+        out = collector.validate_context_response("OKX USDT Swap", "open_interest", data)
+        self.assertEqual(out["value"], 98765.4)
+
+    def test_okx_long_short_ratio(self):
+        data = {"code": "0", "data": [{"longShortAccountRatio": "1.25"}]}
+        out = collector.validate_context_response("OKX USDT Swap", "global_long_short_ratio", data)
+        self.assertEqual(out["value"], 1.25)
+
+    def test_invalid_non_finite_rejected(self):
+        with self.assertRaises(ValueError):
+            collector.validate_context_response("Binance USD-M Futures", "funding_rate", [{"fundingRate": "nan"}])
 
     def test_first_ok_falls_back_after_invalid_payload(self):
         calls = [
@@ -34,7 +52,7 @@ class FuturesContextValidationTests(unittest.TestCase):
         ]
         result = collector.first_ok(calls, "open_interest")
         self.assertEqual(result["source"], "Bybit V5 Linear")
-        self.assertEqual(result["data"]["result"]["list"][0]["openInterest"], "10")
+        self.assertEqual(result["value"], 10.0)
         self.assertEqual(len(result.get("attempts", [])), 0)
 
 
