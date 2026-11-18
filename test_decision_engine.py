@@ -61,10 +61,17 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertGreater(levels["short"]["stop_loss"], levels["short"]["entry_trigger"])
         self.assertIn("已收盘K线", levels["long"]["condition"])
         self.assertEqual(levels["pullback_long"]["status"], "conditional")
-        self.assertEqual(levels["rebound_short"]["status"], "conditional")
+        self.assertEqual(levels["rebound_short"]["status"], "unavailable")
+        self.assertLess(levels["pullback_long"]["entry_zone"][1], levels["reference_price"])
         self.assertLess(levels["pullback_long"]["stop_loss"], levels["pullback_long"]["entry_zone"][0])
-        self.assertGreater(levels["rebound_short"]["stop_loss"], levels["rebound_short"]["entry_zone"][1])
         self.assertIn("回踩", levels["pullback_long"]["condition"])
+
+    def test_bearish_structure_only_offers_rebound_short_not_pullback_long(self):
+        levels = analyze_symbol(make_item("bear"))["levels"]
+        self.assertEqual(levels["pullback_long"]["status"], "unavailable")
+        self.assertEqual(levels["rebound_short"]["status"], "conditional")
+        self.assertGreater(levels["rebound_short"]["entry_zone"][0], levels["reference_price"])
+        self.assertGreater(levels["rebound_short"]["stop_loss"], levels["rebound_short"]["entry_zone"][1])
         self.assertIn("反弹", levels["rebound_short"]["condition"])
 
     def test_levels_scale_candle_structure_to_reference_price_basis(self):
