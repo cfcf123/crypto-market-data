@@ -83,6 +83,37 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertIsNotNone(levels["basis_warning"])
         self.assertGreater(levels["long"]["entry_trigger"], levels["reference_price"])
 
+    def test_derivatives_crowded_longs_add_only_small_bearish_tilt(self):
+        item = make_item("bull")
+        item["futures_context"] = {
+            "funding_rate": {"value": 0.0002, "source": "test"},
+            "global_long_short_ratio": {"value": 2.0, "source": "test"},
+            "open_interest": {"value": 1000000.0, "unit": "USD", "source": "test"},
+        }
+        result = analyze_symbol(item)
+        self.assertEqual(result["derivatives_adjustment"], -0.04)
+        self.assertIn("open_interest", result["derivatives_context"])
+        self.assertTrue(any("OI仅作" in note for note in result["derivatives_notes"]))
+
+    def test_derivatives_crowded_shorts_add_only_small_bullish_tilt(self):
+        item = make_item("bear")
+        item["futures_context"] = {
+            "funding_rate": {"value": -0.0002, "source": "test"},
+            "global_long_short_ratio": {"value": 0.5, "source": "test"},
+        }
+        result = analyze_symbol(item)
+        self.assertEqual(result["derivatives_adjustment"], 0.04)
+
+    def test_open_interest_alone_does_not_change_direction_score(self):
+        baseline = analyze_symbol(make_item("bull"))
+        item = make_item("bull")
+        item["futures_context"] = {
+            "open_interest": {"value": 999999999.0, "unit": "USD", "source": "test"}
+        }
+        with_oi = analyze_symbol(item)
+        self.assertEqual(with_oi["derivatives_adjustment"], 0.0)
+        self.assertEqual(with_oi["evidence_score"], baseline["evidence_score"])
+
     def test_dataset_missing_symbol_is_explicit(self):
         result = analyze_dataset({"symbols": {"BTCUSDT": make_item()}})
         self.assertEqual(result["symbols"]["ETHUSDT"]["status"], "unavailable")
