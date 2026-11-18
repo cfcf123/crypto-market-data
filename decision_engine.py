@@ -97,13 +97,21 @@ def _levels(item):
         swing_high, swing_low = float(spot) * 1.005, float(spot) * 0.995
         level_basis = "estimated 0.8% ATR and ±0.5% range; not candle-derived"
     else:
-        atr = float(metric["atr14"])
-        swing_high = metric.get("swing_high_20")
-        swing_low = metric.get("swing_low_20")
-        if not _finite(swing_high) or not _finite(swing_low) or swing_high <= swing_low:
-            swing_high = max(float(x["high"]) for x in candles[-20:])
-            swing_low = min(float(x["low"]) for x in candles[-20:])
-        level_basis = "closed " + source_tf + " candles; 20-bar swing and ATR14"
+        atr_raw = float(metric["atr14"])
+        swing_high_raw = metric.get("swing_high_20")
+        swing_low_raw = metric.get("swing_low_20")
+        if not _finite(swing_high_raw) or not _finite(swing_low_raw) or swing_high_raw <= swing_low_raw:
+            swing_high_raw = max(float(x["high"]) for x in candles[-20:])
+            swing_low_raw = min(float(x["low"]) for x in candles[-20:])
+        candle_close = float(candles[-1]["close"])
+        # Align OHLCV-derived levels to the authoritative reference-price basis
+        # (normally Binance Spot) without mixing candle series from exchanges.
+        basis_ratio = float(spot) / candle_close if candle_close > 0 else 1.0
+        basis_diff_pct = abs(float(spot) - candle_close) / candle_close * 100 if candle_close > 0 else None
+        atr = atr_raw * basis_ratio
+        swing_high = float(swing_high_raw) * basis_ratio
+        swing_low = float(swing_low_raw) * basis_ratio
+        level_basis = "closed " + source_tf + " candles; 20-bar swing and ATR14; levels scaled to reference-price basis"
     long_trigger = max(float(spot), float(swing_high)) + 0.10 * atr
     short_trigger = min(float(spot), float(swing_low)) - 0.10 * atr
     return {
@@ -113,6 +121,10 @@ def _levels(item):
         "source_timeframe": source_tf,
         "basis": level_basis,
         "atr14": round(atr, 8),
+        "source_exchange": item.get("timeframes", {}).get(source_tf, {}).get("exchange") if source_tf != "spot_estimate" else None,
+        "source_last_close": round(candle_close, 8) if metric is not None else None,
+        "reference_basis_difference_pct": round(basis_diff_pct, 4) if metric is not None else None,
+        "basis_warning": "参考价与K线源收盘价基差超过0.5%，点位已按参考价比例校准，执行前需复核" if metric is not None and basis_diff_pct > 0.5 else None,
         "long": {
             "entry_trigger": round(long_trigger, 8),
             "stop_loss": round(long_trigger - 1.5 * atr, 8),
