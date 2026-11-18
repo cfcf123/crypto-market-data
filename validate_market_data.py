@@ -42,7 +42,7 @@ def validate(data, now=None):
                 times = [c.get("open_time") for c in candles]
                 if times != sorted(times) or len(times) != len(set(times)):
                     raise ValueError(f"{symbol}/{tf}: candles not strictly chronological")
-                if any(not isinstance(c.get("close_time"), (int, float)) or c["close_time"] >= generated.timestamp()*1000 for c in candles):
+                if any(not isinstance(c.get("close_time"), (int, float)) or c["close_time"] >= now.timestamp()*1000 for c in candles):
                     raise ValueError(f"{symbol}/{tf}: contains unclosed/future candle")
                 if any(not all(math.isfinite(float(c[k])) for k in ("open","high","low","close","volume")) for c in candles):
                     raise ValueError(f"{symbol}/{tf}: non-finite candle field")
