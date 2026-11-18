@@ -20,7 +20,20 @@ def validate(data, now=None):
     age = (now - generated).total_seconds()
     if age < -60 or age > 900:
         raise ValueError(f"generated_at outside allowed freshness window: {age:.0f}s")
-    report = {"generated_at": data["generated_at"], "age_seconds": round(age), "symbols": {}, "overall": "ok"}
+    started_value = data.get("collection_started_at")
+    started_age = None
+    duration_seconds = None
+    if started_value:
+        started = parse_dt(started_value)
+        duration_seconds = (generated - started).total_seconds()
+        if duration_seconds < 0:
+            raise ValueError("collection_started_at is later than generated_at")
+        started_age = round((now - started).total_seconds())
+    report = {"generated_at": data["generated_at"], "age_seconds": round(age),
+              "collection_started_at": started_value,
+              "collection_completed_at": data.get("collection_completed_at", data["generated_at"]),
+              "collection_duration_seconds": round(duration_seconds, 2) if duration_seconds is not None else None,
+              "symbols": {}, "overall": "ok"}
     for symbol in SYMBOLS:
         item = data.get("symbols", {}).get(symbol)
         if not isinstance(item, dict):
@@ -39,6 +52,8 @@ def validate(data, now=None):
         spot_age = (now - parse_dt(spot["observed_at"])).total_seconds()
         if spot_age < -60 or spot_age > MAX_SPOT_AGE:
             raise ValueError(f"{symbol}: spot price is stale or future-dated ({spot_age:.0f}s)")
+        spot_freshness = {"age_seconds": round(spot_age), "max_age_seconds": MAX_SPOT_AGE,
+                          "status": "fresh", "observed_at": spot.get("observed_at")}
         tfs = item.get("timeframes", {})
         usable = {}
         for tf in REQUIRED_TFS:
@@ -63,7 +78,12 @@ def validate(data, now=None):
                         raise ValueError(f"{symbol}/{tf}: non-finite candle field")
                     if volume < 0 or h < max(o,close,l) or l > min(o,close,h):
                         raise ValueError(f"{symbol}/{tf}: invalid OHLCV relationship")
-            usable[tf] = {"ok": bool(good), "source": entry.get("exchange"), "candles": len(candles)}
+            latest_close = candles[-1].get("close_time") if candles else None
+            latest_age = round(now.timestamp() - float(latest_close) / 1000) if good and latest_close is not None else None
+            usable[tf] = {"ok": bool(good), "status": "fresh" if good else "unavailable",
+                          "source": entry.get("exchange"), "candles": len(candles),
+                          "latest_closed_at": datetime.fromtimestamp(float(latest_close)/1000, timezone.utc).isoformat() if latest_close is not None else None,
+                          "age_seconds": latest_age, "max_age_seconds": MAX_CANDLE_AGE[tf]}
         count = sum(1 for v in usable.values() if v["ok"])
         if count < 3:
             raise ValueError(f"{symbol}: only {count} usable timeframes")
@@ -111,7 +131,10 @@ def validate(data, now=None):
                 o, h, l, c, vol = values
                 if vol < 0 or h < max(o, c, l) or l > min(o, c, h):
                     raise ValueError(f"{symbol}/{htf}: invalid OHLCV relationship")
-            higher_report[htf] = {"ok": True, "source": entry.get("source_exchange"), "candles": len(bars)}
+            htf_age = round(now.timestamp() - float(bars[-1]["close_time"]) / 1000)
+            higher_report[htf] = {"ok": True, "status": "fresh", "source": entry.get("source_exchange"),
+                                  "candles": len(bars), "latest_closed_at": datetime.fromtimestamp(float(bars[-1]["close_time"])/1000, timezone.utc).isoformat(),
+                                  "age_seconds": htf_age}
         ctx = item.get("futures_context", {})
         metrics = {}
         for metric in ("funding_rate", "open_interest", "global_long_short_ratio"):
@@ -119,7 +142,7 @@ def validate(data, now=None):
             metrics[metric] = {"available": isinstance(value.get("value"), (int,float)) and math.isfinite(value.get("value", float("nan"))),
                                "source": value.get("source"), "status": value.get("status", "ok" if "value" in value else "unavailable")}
         report["symbols"][symbol] = {
-            "spot": {"price": price, "source": spot.get("source"), "authority": authority or "NON_BINANCE_FALLBACK", "status": spot.get("source_status")},
+            "spot": {"price": price, "source": spot.get("source"), "authority": authority or "NON_BINANCE_FALLBACK", "status": spot.get("source_status"), "freshness": spot_freshness},
             "timeframes": usable, "usable_timeframes": count, "higher_timeframes": higher_report, "derivatives": metrics
         }
     return report
