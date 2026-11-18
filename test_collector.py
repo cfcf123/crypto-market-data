@@ -83,5 +83,17 @@ class FuturesContextValidationTests(unittest.TestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["open_time"], 0)
 
+class CollectionTimestampTests(unittest.TestCase):
+    def test_generated_at_is_collection_completion_time(self):
+        from datetime import datetime, timezone
+        started = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc)
+        completed = datetime(2026, 11, 18, 12, 3, tzinfo=timezone.utc)
+        payload = {"collection_started_at": started.isoformat()}
+        result = collector.mark_collection_complete(payload, completed)
+        self.assertEqual(result["generated_at"], completed.isoformat())
+        self.assertEqual(result["collection_completed_at"], completed.isoformat())
+        self.assertEqual(result["collection_started_at"], started.isoformat())
+
+
 if __name__ == "__main__":
     unittest.main()
