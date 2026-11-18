@@ -309,7 +309,7 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.3","indicator_schema_version":"1.0",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.4","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -347,7 +347,7 @@ def main():
     print(json.dumps({"usable_timeframes":usable,"source_health":{
         symbol:{tf:item["timeframes"][tf].get("exchange","unavailable") for tf in INTERVALS}
         for symbol,item in result["symbols"].items()}},ensure_ascii=False))
-    if sum(usable.values()) == 0:
-        raise SystemExit("No usable kline data from Binance Futures, Bybit, OKX, or Binance Spot fallback")
+    if any(usable.get(symbol, 0) < 3 for symbol in SYMBOLS):
+        raise SystemExit("Insufficient usable timeframes: " + json.dumps(usable))
 
 if __name__=="__main__":main()
