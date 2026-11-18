@@ -3,6 +3,15 @@ import collector
 
 
 class FuturesContextValidationTests(unittest.TestCase):
+    def test_binance_global_long_short_uses_documented_fapi_endpoint(self):
+        from unittest.mock import patch
+        payload = [{"symbol": "BTCUSDT", "longShortRatio": "1.2", "longAccount": "0.5454", "shortAccount": "0.4546", "timestamp": 1}]
+        with patch("collector.binance_fapi_get", return_value=payload) as request:
+            result = collector.fetch_binance_global_long_short_ratio("BTCUSDT")
+        request.assert_called_once_with("/futures/data/globalLongShortAccountRatio", {"symbol": "BTCUSDT", "period": "1h", "limit": 1})
+        normalized = collector.validate_context_response("Binance USD-M Futures", "global_long_short_ratio", result)
+        self.assertAlmostEqual(normalized["value"], 1.2)
+
     def test_binance_funding_normalized(self):
         data = [{"fundingRate": "0.0001"}]
         out = collector.validate_context_response("Binance USD-M Futures", "funding_rate", data)

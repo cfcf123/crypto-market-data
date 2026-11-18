@@ -122,6 +122,12 @@ def binance_fapi_get(path, params):
             errors.append(host + ":" + str(e))
     raise RuntimeError("Binance Futures context hosts failed: " + " | ".join(errors))
 
+def fetch_binance_global_long_short_ratio(symbol):
+    # Binance documents this public endpoint on the USD-M Futures API host.
+    # Keep the same host fallback chain used by other Binance Futures metrics.
+    return binance_fapi_get("/futures/data/globalLongShortAccountRatio", {"symbol":symbol,"period":"1h","limit":1})
+
+
 def fetch_binance_spot_klines(symbol, interval, limit=500):
     # Emergency technical-data fallback only. These are spot candles, never relabeled as futures.
     errors=[]
@@ -321,7 +327,7 @@ def fetch_futures_context(symbol):
       ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/public/open-interest?"+qs({"instType":"SWAP","instId":inst})))], "open_interest")
     ccy=symbol.replace("USDT","")
     out["global_long_short_ratio"]=first_ok([
-      ("Binance USD-M Futures",lambda:get_json("https://futures-data.binance.com/futures/data/globalLongShortAccountRatio?"+qs({"symbol":symbol,"period":"1h","limit":1}))),
+      ("Binance USD-M Futures",lambda:fetch_binance_global_long_short_ratio(symbol)),
       ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/account-ratio?"+qs({"category":"linear","symbol":symbol,"period":"1h","limit":1}))),
       ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?"+qs({"ccy":ccy,"period":"1H"})))], "global_long_short_ratio")
     return out
