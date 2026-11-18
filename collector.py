@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 TIMEOUT = 12
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
-INTERVALS = ["1d", "12h", "4h", "1h", "15m", "5m"]
+INTERVALS = ["1d", "12h", "4h", "1h", "15m", "5m", "1m"]
 PRICE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com",
  "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com",
  "https://api3.binance.com", "https://api4.binance.com"]
@@ -42,7 +42,7 @@ def fetch_price(symbol):
 
 def normalize(rows, source, interval, now_ms, bybit=False, okx=False):
     out=[]
-    duration_ms={"1d":86400000,"12h":43200000,"4h":14400000,"1h":3600000,"15m":900000,"5m":300000}[interval]
+    duration_ms={"1d":86400000,"12h":43200000,"4h":14400000,"1h":3600000,"15m":900000,"5m":300000,"1m":60000}[interval]
     # All normalized rows are chronological and contain closed candles only.
     for r in rows:
         if bybit:
