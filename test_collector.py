@@ -71,6 +71,10 @@ class FuturesContextValidationTests(unittest.TestCase):
         self.assertEqual(result["value"], 10.0)
         self.assertEqual(len(result.get("attempts", [])), 0)
 
+    def test_daily_history_lookback_is_extended_for_monthly_analysis(self):
+        self.assertEqual(collector.KLINE_LIMITS["1d"], 800)
+        self.assertGreater(collector.KLINE_LIMITS["1d"], 500)
+
     def test_all_timeframe_provider_mappings_exist(self):
         for tf in collector.INTERVALS:
             self.assertIn(tf, collector.BYBIT_INTERVAL)
