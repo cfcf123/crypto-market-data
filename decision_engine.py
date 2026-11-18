@@ -156,13 +156,6 @@ def _levels(item):
             "take_profit_2": round(long_trigger + 2.5 * atr, 8),
             "condition": "仅在已收盘K线确认突破入场触发价后考虑；未触发不追单"
         },
-        "long": {
-            "entry_trigger": round(long_trigger, 8),
-            "stop_loss": round(long_trigger - 1.5 * atr, 8),
-            "take_profit_1": round(long_trigger + 1.5 * atr, 8),
-            "take_profit_2": round(long_trigger + 2.5 * atr, 8),
-            "condition": "仅在已收盘K线确认突破入场触发价后考虑；未触发不追单"
-        },
         "pullback_long": retest_long,
         "short": {
             "entry_trigger": round(short_trigger, 8),
