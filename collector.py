@@ -158,7 +158,41 @@ def fetch_okx_klines(symbol, interval, limit=300):
     if d.get("code") != "0": raise RuntimeError("OKX code="+str(d.get("code"))+" "+str(d.get("msg")))
     rows=d.get("data",[])
     if not rows: raise ValueError("empty OKX candle response")
-    return normalize(rows,"OKX USDT Swap",interval,int(time.time()*1000),okx=True)
+    candles=normalize(rows,"OKX USDT Swap",interval,int(time.time()*1000),okx=True)
+
+    # OKX's current-candles endpoint is capped at 300 rows. For daily history,
+    # page older closed candles from history-candles so monthly analysis can use
+    # a longer same-contract, same-exchange series.
+    if interval == "1d" and limit > len(candles):
+        cursor = min(int(row["open_time"]) for row in candles)
+        max_pages = max(1, (limit - len(candles) + 99) // 100)
+        for _ in range(max_pages):
+            if len(candles) >= limit:
+                break
+            page_limit = min(100, limit - len(candles))
+            history_url = "https://www.okx.com/api/v5/market/history-candles?" + qs({
+                "instId":inst, "bar":OKX_BAR[interval], "after":str(cursor), "limit":str(page_limit)
+            })
+            try:
+                history = get_json(history_url)
+                if history.get("code") != "0":
+                    raise RuntimeError("OKX history code=" + str(history.get("code")) + " " + str(history.get("msg")))
+                history_rows = history.get("data", [])
+                if not history_rows:
+                    break
+                older = normalize(history_rows,"OKX USDT Swap",interval,int(time.time()*1000),okx=True)
+                older = [row for row in older if int(row["open_time"]) < cursor]
+                if not older:
+                    break
+                candles.extend(older)
+                cursor = min(int(row["open_time"]) for row in older)
+            except Exception:
+                # Preserve the valid current page; downstream still gets a
+                # clearly bounded 300+ candle history rather than fabricated data.
+                break
+
+    unique = {int(row["open_time"]):row for row in candles}
+    return [unique[key] for key in sorted(unique)][-limit:]
 
 def fetch_klines(symbol, interval, limit=500):
     attempts=[]
