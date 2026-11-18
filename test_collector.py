@@ -80,6 +80,19 @@ class FuturesContextValidationTests(unittest.TestCase):
             self.assertIn(tf, collector.BYBIT_INTERVAL)
             self.assertIn(tf, collector.OKX_BAR)
 
+    def test_okx_daily_history_paginates_older_closed_candles(self):
+        from unittest.mock import patch
+        day = 86400000
+        def row(open_time):
+            return [str(open_time), "100", "105", "95", "102", "10", "1020", "0", "1"]
+        current = {"code":"0","data":[row(4*day),row(3*day)]}
+        history = {"code":"0","data":[row(2*day),row(day),row(0)]}
+        with patch("collector.get_json", side_effect=[current, history]) as request:
+            candles = collector.fetch_okx_klines("BTCUSDT", "1d", limit=5)
+        self.assertEqual(len(candles), 5)
+        self.assertEqual([x["open_time"] for x in candles], [0,day,2*day,3*day,4*day])
+        self.assertIn("/api/v5/market/history-candles?", request.call_args_list[1].args[0])
+
     def test_normalize_excludes_open_candle(self):
         now_ms = 119999
         rows = [[0, "1", "2", "0.5", "1.5", "10"], [60000, "1.5", "2.5", "1", "2", "11"]]
