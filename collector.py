@@ -16,7 +16,7 @@ def get_json(url, retries=3):
     last=None
     for attempt in range(retries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent":"crypto-market-data/3.0 (+public-readonly-collector)","Accept":"application/json","Accept-Encoding":"gzip, deflate"})
+            req = urllib.request.Request(url, headers={"User-Agent":"crypto-market-data/3.0 (+public-readonly-collector)","Accept":"application/json"})
             with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
                 if r.status != 200: raise RuntimeError("HTTP "+str(r.status))
                 data=json.loads(r.read().decode("utf-8"))
