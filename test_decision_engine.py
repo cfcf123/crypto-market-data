@@ -61,6 +61,15 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertGreater(levels["short"]["stop_loss"], levels["short"]["entry_trigger"])
         self.assertIn("已收盘K线", levels["long"]["condition"])
 
+    def test_levels_scale_candle_structure_to_reference_price_basis(self):
+        result = analyze_symbol(make_item("bull"))
+        levels = result["levels"]
+        self.assertEqual(levels["reference_price"], 100.0)
+        self.assertEqual(levels["source_last_close"], 110.0)
+        self.assertAlmostEqual(levels["reference_basis_difference_pct"], 9.0909, places=3)
+        self.assertIsNotNone(levels["basis_warning"])
+        self.assertGreater(levels["long"]["entry_trigger"], levels["reference_price"])
+
     def test_dataset_missing_symbol_is_explicit(self):
         result = analyze_dataset({"symbols": {"BTCUSDT": make_item()}})
         self.assertEqual(result["symbols"]["ETHUSDT"]["status"], "unavailable")
