@@ -53,3 +53,8 @@ jobs:
             test-status.txt
           if-no-files-found: error
           retention-days: 7
+      - name: Fail workflow if unit tests failed
+        if: always() && steps.tests.outcome != 'success'
+        run: |
+          echo "Unit tests failed; artifact was preserved for diagnosis."
+          exit 1
