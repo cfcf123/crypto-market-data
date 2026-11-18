@@ -75,6 +75,47 @@ def _wyckoff_adjustment(item):
     return _clamp(adjustment, -0.12, 0.12), evidence
 
 
+def _derivatives_adjustment(item):
+    """Very small contrarian context adjustment; OI is descriptive, not directional."""
+    context = item.get("futures_context", {})
+    if not isinstance(context, dict):
+        context = {}
+    adjustment = 0.0
+    notes = []
+    details = {}
+    funding = context.get("funding_rate", {})
+    funding_value = funding.get("value") if isinstance(funding, dict) else None
+    if _finite(funding_value):
+        details["funding_rate"] = funding_value
+        details["funding_source"] = funding.get("source")
+        # Only unusually positive/negative funding receives a small contrarian tilt.
+        if funding_value >= 0.0001:
+            adjustment -= 0.02
+            notes.append("正资金费率偏高：多头持仓成本上升，轻微逆向偏空")
+        elif funding_value <= -0.0001:
+            adjustment += 0.02
+            notes.append("负资金费率偏低：空头拥挤风险增加，轻微逆向偏多")
+    ratio = context.get("global_long_short_ratio", {})
+    ratio_value = ratio.get("value") if isinstance(ratio, dict) else None
+    if _finite(ratio_value) and ratio_value > 0:
+        details["global_long_short_ratio"] = ratio_value
+        details["long_short_source"] = ratio.get("source")
+        if ratio_value >= 1.5:
+            adjustment -= 0.02
+            notes.append("多空账户比偏向多头：作为拥挤度提示，轻微逆向偏空")
+        elif ratio_value <= 0.67:
+            adjustment += 0.02
+            notes.append("多空账户比偏向空头：作为拥挤度提示，轻微逆向偏多")
+    oi = context.get("open_interest", {})
+    oi_value = oi.get("value") if isinstance(oi, dict) else None
+    if _finite(oi_value) and oi_value >= 0:
+        details["open_interest"] = oi_value
+        details["open_interest_unit"] = oi.get("unit")
+        details["open_interest_source"] = oi.get("source")
+        notes.append("OI仅作持仓规模背景；缺少连续变化序列，不参与方向打分")
+    return _clamp(adjustment, -0.04, 0.04), details, notes
+
+
 def _levels(item):
     spot_block = item.get("spot_price", {})
     spot = spot_block.get("price")
@@ -204,7 +245,8 @@ def analyze_symbol(item):
     else:
         weighted_score = 0.0
     wyckoff_adjustment, wyckoff_evidence = _wyckoff_adjustment(item)
-    final_score = _clamp(weighted_score + wyckoff_adjustment)
+    derivatives_adjustment, derivatives_context, derivatives_notes = _derivatives_adjustment(item)
+    final_score = _clamp(weighted_score + wyckoff_adjustment + derivatives_adjustment)
     positive_weight = sum(TIMEFRAME_WEIGHTS[tf] for tf, row in evidence.items() if row["score"] is not None and row["score"] > 0)
     negative_weight = sum(TIMEFRAME_WEIGHTS[tf] for tf, row in evidence.items() if row["score"] is not None and row["score"] < 0)
     conflict = (2 * min(positive_weight, negative_weight) / (positive_weight + negative_weight)
@@ -226,6 +268,9 @@ def analyze_symbol(item):
         "timeframes": evidence,
         "wyckoff_adjustment": round(wyckoff_adjustment, 4),
         "wyckoff_evidence": wyckoff_evidence,
+        "derivatives_adjustment": round(derivatives_adjustment, 4),
+        "derivatives_context": derivatives_context,
+        "derivatives_notes": derivatives_notes,
         "levels": _levels(item),
         "interpretation": "权重表示多周期证据倾向，不是胜率；观望权重随方向冲突上升。"
     }
