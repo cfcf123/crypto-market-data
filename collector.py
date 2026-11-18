@@ -9,8 +9,8 @@ INTERVALS = ["1d", "12h", "4h", "1h", "15m", "5m", "1m"]
 PRICE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com",
  "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com",
  "https://api3.binance.com", "https://api4.binance.com"]
-BYBIT_INTERVAL = {"1d":"D", "12h":"720", "4h":"240", "1h":"60", "15m":"15", "5m":"5"}
-OKX_BAR = {"1d":"1D", "12h":"12H", "4h":"4H", "1h":"1H", "15m":"15m", "5m":"5m"}
+BYBIT_INTERVAL = {"1d":"D", "12h":"720", "4h":"240", "1h":"60", "15m":"15", "5m":"5", "1m":"1"}
+OKX_BAR = {"1d":"1D", "12h":"12H", "4h":"4H", "1h":"1H", "15m":"15m", "5m":"5m", "1m":"1m"}
 
 def get_json(url, retries=3):
     last=None
@@ -64,10 +64,19 @@ def normalize(rows, source, interval, now_ms, bybit=False, okx=False):
     return out
 
 def fetch_binance_klines(symbol, interval, limit=500):
-    url="https://fapi.binance.com/fapi/v1/klines?"+qs({"symbol":symbol,"interval":interval,"limit":limit})
-    rows=get_json(url)
-    if not isinstance(rows,list): raise ValueError("unexpected Binance futures response")
-    return normalize(rows,"Binance USD-M Futures",interval,int(time.time()*1000))
+    errors=[]
+    hosts=["https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com"]
+    for host in hosts:
+        try:
+            url=host+"/fapi/v1/klines?"+qs({"symbol":symbol,"interval":interval,"limit":limit})
+            rows=get_json(url)
+            if not isinstance(rows,list) or not rows: raise ValueError("empty/invalid Binance futures response")
+            candles=normalize(rows,"Binance USD-M Futures",interval,int(time.time()*1000))
+            if not candles: raise ValueError("no closed Binance futures candles")
+            return candles
+        except Exception as e:
+            errors.append(host+":"+str(e))
+    raise RuntimeError("Binance futures kline hosts failed: "+" | ".join(errors))
 
 def fetch_binance_spot_klines(symbol, interval, limit=500):
     # Emergency technical-data fallback only. These are spot candles, never relabeled as futures.
@@ -115,7 +124,7 @@ def fetch_klines(symbol, interval, limit=500):
              "candles":candles}
         except Exception as e:
             attempts.append({"exchange":name,"error":str(e)})
-    return {"error":"all futures kline providers failed","source_status":"unavailable","interval":interval,"attempts":attempts}
+    return {"error":"all kline providers failed","source_status":"unavailable","interval":interval,"attempts":attempts,"provider_count":len(providers),"failed_at":datetime.now(timezone.utc).isoformat()}
 
 def ema(values, period):
     if len(values)<period:return None
@@ -274,7 +283,7 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.0","indicator_schema_version":"1.0",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.1","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
