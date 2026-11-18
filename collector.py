@@ -403,8 +403,17 @@ def aggregate_closed_candles(daily_candles, timeframe, now=None):
         })
     return result
 
+def mark_collection_complete(result, completed_at=None):
+    """Stamp the dataset after all market-data requests and calculations finish."""
+    completed = completed_at or datetime.now(timezone.utc)
+    stamp = completed.astimezone(timezone.utc).isoformat()
+    result["generated_at"] = stamp
+    result["collection_completed_at"] = stamp
+    return result
+
+
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.6","indicator_schema_version":"1.0",
+    result={"collection_started_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.7","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -446,6 +455,7 @@ def main():
         for job in as_completed(jobs):
             symbol,item=job.result()
             result["symbols"][symbol]=item
+    mark_collection_complete(result)
     os.makedirs("output",exist_ok=True)
     with open("output/market-data.json","w",encoding="utf-8") as f:json.dump(result,f,ensure_ascii=False,indent=2)
     summary={}
