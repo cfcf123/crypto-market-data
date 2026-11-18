@@ -39,6 +39,16 @@ class AggregationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             aggregate_closed_candles([], "3M", datetime(2026, 1, 1, tzinfo=timezone.utc))
 
+    def test_incomplete_week_is_excluded(self):
+        start = datetime(2026, 1, 5, tzinfo=timezone.utc)
+        rows = self.make_daily(start, 14)
+        rows.pop(3)  # missing Thursday; do not fabricate a seven-day candle
+        now = datetime(2026, 1, 20, tzinfo=timezone.utc)
+        weekly = aggregate_closed_candles(rows, "1w", now)
+        self.assertEqual(len(weekly), 1)
+        self.assertEqual(weekly[0]["source_days"], 7)
+        self.assertEqual(weekly[0]["open_time"], int((start + timedelta(days=7)).timestamp() * 1000))
+
 
 if __name__ == "__main__":
     unittest.main()
