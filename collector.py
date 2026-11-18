@@ -12,12 +12,19 @@ PRICE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com",
 BYBIT_INTERVAL = {"1d":"D", "12h":"720", "4h":"240", "1h":"60", "15m":"15", "5m":"5"}
 OKX_BAR = {"1d":"1D", "12h":"12H", "4h":"4H", "1h":"1H", "15m":"15m", "5m":"5m"}
 
-def get_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent":"crypto-market-data/2.0","Accept":"application/json"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-        if r.status != 200: raise RuntimeError("HTTP "+str(r.status))
-        data=json.loads(r.read().decode("utf-8"))
-    return data
+def get_json(url, retries=3):
+    last=None
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent":"crypto-market-data/3.0 (+public-readonly-collector)","Accept":"application/json","Accept-Encoding":"gzip, deflate"})
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                if r.status != 200: raise RuntimeError("HTTP "+str(r.status))
+                data=json.loads(r.read().decode("utf-8"))
+            return data
+        except Exception as e:
+            last=e
+            if attempt < retries-1: time.sleep(0.8*(2**attempt))
+    raise last
 
 def qs(params):
     return urllib.parse.urlencode(params)
@@ -59,8 +66,21 @@ def normalize(rows, source, interval, now_ms, bybit=False, okx=False):
 def fetch_binance_klines(symbol, interval, limit=500):
     url="https://fapi.binance.com/fapi/v1/klines?"+qs({"symbol":symbol,"interval":interval,"limit":limit})
     rows=get_json(url)
-    if not isinstance(rows,list): raise ValueError("unexpected Binance response")
+    if not isinstance(rows,list): raise ValueError("unexpected Binance futures response")
     return normalize(rows,"Binance USD-M Futures",interval,int(time.time()*1000))
+
+def fetch_binance_spot_klines(symbol, interval, limit=500):
+    # Emergency technical-data fallback only. These are spot candles, never relabeled as futures.
+    errors=[]
+    for host in ["https://data-api.binance.vision","https://api.binance.com"]:
+        try:
+            url=host+"/api/v3/klines?"+qs({"symbol":symbol,"interval":interval,"limit":limit})
+            rows=get_json(url)
+            if not isinstance(rows,list) or not rows: raise ValueError("empty Binance spot response")
+            return normalize(rows,"Binance Spot (technical fallback)",interval,int(time.time()*1000))
+        except Exception as e:
+            errors.append(host+":"+str(e))
+    raise RuntimeError("Binance spot fallback failed: "+" | ".join(errors))
 
 def fetch_bybit_klines(symbol, interval, limit=500):
     url="https://api.bybit.com/v5/market/kline?"+qs({"category":"linear","symbol":symbol,"interval":BYBIT_INTERVAL[interval],"limit":limit})
@@ -83,11 +103,13 @@ def fetch_klines(symbol, interval, limit=500):
     attempts=[]
     providers=[("Binance USD-M Futures",fetch_binance_klines),
                ("Bybit V5 Linear",fetch_bybit_klines),
-               ("OKX USDT Swap",fetch_okx_klines)]
+               ("OKX USDT Swap",fetch_okx_klines),
+               ("Binance Spot (technical fallback)",fetch_binance_spot_klines)]
     for name,fn in providers:
         try:
             candles=fn(symbol,interval,limit)
-            if len(candles)<30: raise ValueError("only "+str(len(candles))+" closed candles; minimum 30")
+            minimum=200 if interval in ("1d","12h","4h","1h") else 100
+            if len(candles)<minimum: raise ValueError("only "+str(len(candles))+" closed candles; minimum "+str(minimum))
             return {"exchange":name,"source_status":"ok","interval":interval,"requested":limit,
              "received_closed":len(candles),"last_closed_utc":datetime.fromtimestamp(candles[-1]["close_time"]/1000,timezone.utc).isoformat(),
              "candles":candles}
@@ -252,19 +274,29 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"2.4","indicator_schema_version":"1.0",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.0","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
-    for symbol in SYMBOLS:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    def collect_symbol(symbol):
         item={"spot_price":fetch_price(symbol),"futures_context":fetch_futures_context(symbol),"timeframes":{}}
-        for tf in INTERVALS:
-            k=fetch_klines(symbol,tf)
-            if "candles" in k:
-                k["indicators"]=indicators(k["candles"])
-                k["indicators"]["calculated_from_closed_candles"]=True
-                k["indicators"]["source_exchange"]=k["exchange"]
-            item["timeframes"][tf]=k
-        result["symbols"][symbol]=item
+        with ThreadPoolExecutor(max_workers=len(INTERVALS)) as pool:
+            jobs={pool.submit(fetch_klines,symbol,tf):tf for tf in INTERVALS}
+            for job in as_completed(jobs):
+                tf=jobs[job]
+                try: k=job.result()
+                except Exception as e: k={"error":str(e),"source_status":"unavailable","interval":tf}
+                if "candles" in k:
+                    k["indicators"]=indicators(k["candles"])
+                    k["indicators"]["calculated_from_closed_candles"]=True
+                    k["indicators"]["source_exchange"]=k["exchange"]
+                item["timeframes"][tf]=k
+        return symbol,item
+    with ThreadPoolExecutor(max_workers=len(SYMBOLS)) as pool:
+        jobs={pool.submit(collect_symbol,s):s for s in SYMBOLS}
+        for job in as_completed(jobs):
+            symbol,item=job.result()
+            result["symbols"][symbol]=item
     os.makedirs("output",exist_ok=True)
     with open("output/market-data.json","w",encoding="utf-8") as f:json.dump(result,f,ensure_ascii=False,indent=2)
     summary={}
@@ -275,8 +307,12 @@ def main():
          "open_interest":item["futures_context"]["open_interest"].get("source","unavailable"),
          "long_short":item["futures_context"]["global_long_short_ratio"].get("source","unavailable")}
     print(json.dumps({"output":"output/market-data.json","generated_at":result["generated_at"],"summary":summary},ensure_ascii=False))
-    # Only fail the workflow if no futures candles are available for either asset.
-    if not any("candles" in tf for item in result["symbols"].values() for tf in item["timeframes"].values()):
-        raise SystemExit("No futures kline data from Binance, Bybit, or OKX")
+    usable={symbol:sum(1 for tf in item["timeframes"].values() if "candles" in tf)
+            for symbol,item in result["symbols"].items()}
+    print(json.dumps({"usable_timeframes":usable,"source_health":{
+        symbol:{tf:item["timeframes"][tf].get("exchange","unavailable") for tf in INTERVALS}
+        for symbol,item in result["symbols"].items()}},ensure_ascii=False))
+    if sum(usable.values()) == 0:
+        raise SystemExit("No usable kline data from Binance Futures, Bybit, OKX, or Binance Spot fallback")
 
 if __name__=="__main__":main()
