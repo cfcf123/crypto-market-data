@@ -78,6 +78,15 @@ def fetch_binance_klines(symbol, interval, limit=500):
             errors.append(host+":"+str(e))
     raise RuntimeError("Binance futures kline hosts failed: "+" | ".join(errors))
 
+def binance_fapi_get(path, params):
+    errors=[]
+    for host in ["https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com"]:
+        try:
+            return get_json(host + path + "?" + qs(params))
+        except Exception as e:
+            errors.append(host + ":" + str(e))
+    raise RuntimeError("Binance Futures context hosts failed: " + " | ".join(errors))
+
 def fetch_binance_spot_klines(symbol, interval, limit=500):
     # Emergency technical-data fallback only. These are spot candles, never relabeled as futures.
     errors=[]
@@ -268,11 +277,11 @@ def fetch_futures_context(symbol):
     inst=symbol.replace("USDT","-USDT-SWAP")
     out={}
     out["funding_rate"]=first_ok([
-      ("Binance USD-M Futures",lambda:get_json("https://fapi.binance.com/fapi/v1/fundingRate?"+qs({"symbol":symbol,"limit":1}))),
+      ("Binance USD-M Futures",lambda:binance_fapi_get("/fapi/v1/fundingRate",{"symbol":symbol,"limit":1})),
       ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/funding/history?"+qs({"category":"linear","symbol":symbol,"limit":1}))),
       ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/public/funding-rate?"+qs({"instId":inst})))], "funding_rate")
     out["open_interest"]=first_ok([
-      ("Binance USD-M Futures",lambda:get_json("https://fapi.binance.com/fapi/v1/openInterest?symbol="+symbol)),
+      ("Binance USD-M Futures",lambda:binance_fapi_get("/fapi/v1/openInterest",{"symbol":symbol})),
       ("Bybit V5 Linear",lambda:get_json("https://api.bybit.com/v5/market/open-interest?"+qs({"category":"linear","symbol":symbol,"intervalTime":"1h","limit":1}))),
       ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/public/open-interest?"+qs({"instType":"SWAP","instId":inst})))], "open_interest")
     ccy=symbol.replace("USDT","")
@@ -283,7 +292,7 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.1","indicator_schema_version":"1.0",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.2","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
