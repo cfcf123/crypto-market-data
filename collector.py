@@ -31,14 +31,31 @@ def qs(params):
 
 def fetch_price(symbol):
     errors=[]
+    # Primary: Binance Spot, then independent exchange spot/linear tickers.
     for host in PRICE_HOSTS:
         try:
             d=get_json(host+"/api/v3/ticker/price?symbol="+symbol)
             p=float(d["price"])
             if d.get("symbol") != symbol or p <= 0: raise ValueError("symbol/price validation failed")
-            return {"price":p,"source":host,"observed_at":datetime.now(timezone.utc).isoformat()}
-        except Exception as e: errors.append({"host":host,"error":str(e)})
-    return {"error":"all Binance Spot price endpoints failed","attempts":errors}
+            return {"price":p,"source":"Binance Spot: "+host,"source_status":"ok","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors}
+        except Exception as e:
+            errors.append({"source":"Binance Spot: "+host,"error":str(e)})
+    try:
+        d=get_json("https://api.bybit.com/v5/market/tickers?category=linear&symbol="+symbol)
+        p=float(d["result"]["list"][0]["lastPrice"])
+        if p <= 0: raise ValueError("invalid Bybit price")
+        return {"price":p,"source":"Bybit Linear","source_status":"fallback","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors}
+    except Exception as e:
+        errors.append({"source":"Bybit Linear","error":str(e)})
+    try:
+        inst="BTC-USDT-SWAP" if symbol=="BTCUSDT" else "ETH-USDT-SWAP"
+        d=get_json("https://www.okx.com/api/v5/market/ticker?instId="+inst)
+        p=float(d["data"][0]["last"])
+        if p <= 0: raise ValueError("invalid OKX price")
+        return {"price":p,"source":"OKX USDT Swap","source_status":"fallback","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors}
+    except Exception as e:
+        errors.append({"source":"OKX USDT Swap","error":str(e)})
+    return {"error":"all spot/price providers failed","source_status":"unavailable","attempts":errors,"failed_at":datetime.now(timezone.utc).isoformat()}
 
 def normalize(rows, source, interval, now_ms, bybit=False, okx=False):
     out=[]
@@ -292,7 +309,7 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.2","indicator_schema_version":"1.0",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.3","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
