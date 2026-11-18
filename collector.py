@@ -352,13 +352,13 @@ def aggregate_closed_candles(daily_candles, timeframe, now=None):
     # Align higher periods to the actual daily-candle boundary instead of assuming UTC midnight.
     offsets = [int(x["open_time"]) % day_ms for x in daily_candles]
     offset_ms = max(set(offsets), key=offsets.count)
-    offset = timedelta(milliseconds=offset_ms)
+    calendar_shift = timedelta(milliseconds=(day_ms - offset_ms) % day_ms)
     buckets = {}
     for candle in daily_candles:
         open_ms = int(candle["open_time"])
         if open_ms % day_ms != offset_ms:
             continue
-        dt = datetime.fromtimestamp(open_ms / 1000, timezone.utc) - offset
+        dt = datetime.fromtimestamp(open_ms / 1000, timezone.utc) + calendar_shift
         if timeframe == "1w":
             local_start = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc) - timedelta(days=dt.weekday())
             local_end = local_start + timedelta(days=7)
@@ -367,8 +367,8 @@ def aggregate_closed_candles(daily_candles, timeframe, now=None):
             local_start = datetime(dt.year, dt.month, 1, tzinfo=timezone.utc)
             local_end = datetime(dt.year + (dt.month == 12), (dt.month % 12) + 1, 1, tzinfo=timezone.utc)
             key = local_start.strftime("%Y-%m")
-        period_start = local_start + offset
-        period_end = local_end + offset
+        period_start = local_start - calendar_shift
+        period_end = local_end - calendar_shift
         expected_days = (local_end - local_start).days
         if period_end > now:
             continue
