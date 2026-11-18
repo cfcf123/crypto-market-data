@@ -59,6 +59,16 @@ class AggregationTests(unittest.TestCase):
         self.assertEqual(weekly[0]["source_days"], 7)
         self.assertEqual(weekly[0]["open_time"], int(start.timestamp() * 1000))
 
+    def test_monthly_aggregation_respects_non_utc_daily_boundary(self):
+        start = datetime(2025, 12, 31, 16, tzinfo=timezone.utc)  # Jan 1 00:00 in UTC+8
+        rows = self.make_daily(start, 59)  # complete January and February 2026
+        now = datetime(2026, 3, 1, 17, tzinfo=timezone.utc)
+        monthly = aggregate_closed_candles(rows, "1M", now)
+        self.assertEqual(len(monthly), 2)
+        self.assertEqual([x["source_days"] for x in monthly], [31, 28])
+        self.assertEqual(monthly[0]["calendar_offset_hours"], 16)
+        self.assertEqual(monthly[0]["open_time"], int(start.timestamp() * 1000))
+
 
 if __name__ == "__main__":
     unittest.main()
