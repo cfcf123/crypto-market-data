@@ -56,6 +56,7 @@ class AggregationTests(unittest.TestCase):
         weekly = aggregate_closed_candles(rows, "1w", now)
         self.assertEqual(len(weekly), 3)
         self.assertEqual(weekly[0]["calendar_offset_hours"], 16)
+        self.assertEqual(weekly[0]["aggregation"], "SOURCE_DAILY_CALENDAR_1w")
         self.assertEqual(weekly[0]["source_days"], 7)
         self.assertEqual(weekly[0]["open_time"], int(start.timestamp() * 1000))
 
@@ -67,6 +68,7 @@ class AggregationTests(unittest.TestCase):
         self.assertEqual(len(monthly), 2)
         self.assertEqual([x["source_days"] for x in monthly], [31, 28])
         self.assertEqual(monthly[0]["calendar_offset_hours"], 16)
+        self.assertEqual(monthly[0]["aggregation"], "SOURCE_DAILY_CALENDAR_1M")
         self.assertEqual(monthly[0]["open_time"], int(start.timestamp() * 1000))
 
 
