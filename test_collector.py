@@ -61,7 +61,7 @@ class FuturesContextValidationTests(unittest.TestCase):
             self.assertIn(tf, collector.OKX_BAR)
 
     def test_normalize_excludes_open_candle(self):
-        now_ms = 120000
+        now_ms = 119999
         rows = [[0, "1", "2", "0.5", "1.5", "10"], [60000, "1.5", "2.5", "1", "2", "11"]]
         out = collector.normalize(rows, "test", "1m", now_ms, bybit=True)
         self.assertEqual(len(out), 1)
