@@ -27,10 +27,19 @@ def higher_bars(tf):
     return rows
 
 def sample():
-    candles = [{"open_time": i*60000, "close_time": i*60000+59999, "open":1.0,"high":2.0,"low":0.5,"close":1.5,"volume":10.0} for i in range(300)]
-    return {"generated_at":"2026-11-18T07:00:00+00:00","symbols":{
-      s: {"spot_price":{"price":100.0,"source":"Binance Spot: https://data-api.binance.vision","source_status":"ok","price_authority":"BINANCE"},
-          "timeframes":{tf:{"source_status":"ok","exchange":"OKX USDT Swap","candles":candles} for tf in ("1d","12h","4h","1h","15m","5m","1m")},
+    generated = datetime(2026,11,18,7,0,tzinfo=timezone.utc)
+    now_ms = int(generated.timestamp()*1000)
+    durations = {"1d":86400000,"12h":43200000,"4h":14400000,"1h":3600000,"15m":900000,"5m":300000,"1m":60000}
+    timeframes = {}
+    for tf,duration in durations.items():
+        start = now_ms - duration*300
+        candles = [{"open_time":start+i*duration,"close_time":start+(i+1)*duration-1,
+                    "open":1.0,"high":2.0,"low":0.5,"close":1.5,"volume":10.0} for i in range(300)]
+        timeframes[tf] = {"source_status":"ok","exchange":"OKX USDT Swap","candles":candles}
+    observed = generated.isoformat()
+    return {"generated_at":observed,"symbols":{
+      s: {"spot_price":{"price":100.0,"source":"Binance Spot: https://data-api.binance.vision","source_status":"ok","price_authority":"BINANCE","observed_at":observed},
+          "timeframes":timeframes,
           "higher_timeframes":{"1w":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1w"),"wyckoff":{"status":"ok"}},
                                "1M":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1M"),"wyckoff":{"status":"ok"}}},
           "futures_context":{"funding_rate":{"status":"unavailable"},"open_interest":{"value":1000.0,"source":"OKX"},"global_long_short_ratio":{"status":"unavailable"}}}
@@ -47,6 +56,16 @@ class MarketDataValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
     def test_binance_authority_must_match_source(self):
         d=sample(); d["symbols"]["BTCUSDT"]["spot_price"]["source"]="OKX"
+        with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+    def test_stale_spot_price_fails(self):
+        d=sample(); d["symbols"]["BTCUSDT"]["spot_price"]["observed_at"]="2026-11-18T06:50:00+00:00"
+        with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+    def test_stale_intraday_candle_fails(self):
+        d=sample()
+        d["symbols"]["BTCUSDT"]["timeframes"]["1m"]["candles"][-1]["close_time"] -= 20*60000
+        with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+    def test_invalid_ohlcv_relationship_fails(self):
+        d=sample(); d["symbols"]["BTCUSDT"]["timeframes"]["5m"]["candles"][-1]["high"]=0.9
         with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
     def test_unclosed_candle_fails(self):
         d=sample(); d["symbols"]["BTCUSDT"]["timeframes"]["1m"]["candles"][-1]["close_time"]=int(datetime(2026,11,18,7,1,tzinfo=timezone.utc).timestamp()*1000)
