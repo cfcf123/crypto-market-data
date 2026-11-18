@@ -29,6 +29,24 @@ def get_json(url, retries=3):
 def qs(params):
     return urllib.parse.urlencode(params)
 
+def validate_price_cross_exchange(symbol, primary_price):
+    checks=[]
+    for name, url in [
+        ("Bybit Linear","https://api.bybit.com/v5/market/tickers?category=linear&symbol="+symbol),
+        ("OKX USDT Swap","https://www.okx.com/api/v5/market/ticker?instId="+("BTC-USDT-SWAP" if symbol=="BTCUSDT" else "ETH-USDT-SWAP"))
+    ]:
+        try:
+            d=get_json(url)
+            if name=="Bybit Linear":
+                p=float(d["result"]["list"][0]["lastPrice"])
+            else:
+                p=float(d["data"][0]["last"])
+            diff=abs(p-primary_price)/primary_price
+            checks.append({"source":name,"price":p,"difference_pct":round(diff*100,5),"ok":diff<=0.01})
+        except Exception as e:
+            checks.append({"source":name,"error":str(e),"ok":False})
+    return checks
+
 def fetch_price(symbol):
     errors=[]
     # Primary: Binance Spot, then independent exchange spot/linear tickers.
@@ -37,7 +55,7 @@ def fetch_price(symbol):
             d=get_json(host+"/api/v3/ticker/price?symbol="+symbol)
             p=float(d["price"])
             if d.get("symbol") != symbol or p <= 0: raise ValueError("symbol/price validation failed")
-            return {"price":p,"source":"Binance Spot: "+host,"source_status":"ok","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors}
+            return {"price":p,"source":"Binance Spot: "+host,"source_status":"ok","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors,"cross_exchange":validate_price_cross_exchange(symbol,p)}
         except Exception as e:
             errors.append({"source":"Binance Spot: "+host,"error":str(e)})
     try:
@@ -309,7 +327,7 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.4","indicator_schema_version":"1.0",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.5","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
