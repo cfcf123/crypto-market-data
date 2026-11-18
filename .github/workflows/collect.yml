@@ -30,18 +30,14 @@ jobs:
           echo "run_number=${{ github.run_number }}" | tee -a trigger.txt
           echo "sha=${{ github.sha }}" | tee -a trigger.txt
           echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a trigger.txt
-      - name: Run collector unit tests (non-blocking)
+      - name: Run unit tests (non-blocking for collection)
         id: tests
         continue-on-error: true
         run: python -m unittest -v
-
       - name: Collect public market data
         run: python collector.py
-
-      - name: Validate data quality and freshness
-        run: |
-          python -c 'import json; from datetime import datetime, timezone; from pathlib import Path; p=Path("output/market-data.json"); d=json.loads(p.read_text()); age=(datetime.now(timezone.utc)-datetime.fromisoformat(d["generated_at"].replace("Z","+00:00"))).total_seconds(); assert p.stat().st_size>=1000; assert 0<=age<=900; assert all(s in d.get("symbols",{}) for s in ("BTCUSDT","ETHUSDT")); u={s:sum(1 for x in d["symbols"][s].get("timeframes",{}).values() if x.get("source_status")=="ok" and x.get("candles")) for s in ("BTCUSDT","ETHUSDT")}; assert all(v>=3 for v in u.values()), u; print("validated", {"age_seconds":round(age),"usable_timeframes":u})'
-
+      - name: Validate market data
+        run: python validate_market_data.py
       - name: Report unit-test status
         if: always()
         run: echo "unit_tests=${{ steps.tests.outcome }}" | tee test-status.txt
@@ -52,6 +48,7 @@ jobs:
           name: market-data-${{ github.run_number }}
           path: |
             output/market-data.json
+            output/data-quality.json
             trigger.txt
             test-status.txt
           if-no-files-found: error
