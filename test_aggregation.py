@@ -50,7 +50,7 @@ class AggregationTests(unittest.TestCase):
         self.assertEqual(weekly[0]["open_time"], int((start + timedelta(days=7)).timestamp() * 1000))
 
     def test_weekly_aggregation_respects_non_utc_daily_boundary(self):
-        start = datetime(2026, 1, 5, 16, tzinfo=timezone.utc)  # OKX UTC+8 daily open
+        start = datetime(2026, 1, 4, 16, tzinfo=timezone.utc)  # Monday 00:00 in UTC+8
         rows = self.make_daily(start, 21)
         now = datetime(2026, 1, 27, 17, tzinfo=timezone.utc)
         weekly = aggregate_closed_candles(rows, "1w", now)
