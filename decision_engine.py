@@ -91,6 +91,7 @@ def _levels(item):
             if _finite(candidate_metric.get("atr14")) and candidate_metric["atr14"] > 0:
                 source_tf, candles, metric = tf, candidate, candidate_metric
                 break
+    ema20_level = None
     if metric is None:
         atr = float(spot) * 0.008
         source_tf = "spot_estimate"
@@ -109,11 +110,34 @@ def _levels(item):
         basis_ratio = float(spot) / candle_close if candle_close > 0 else 1.0
         basis_diff_pct = abs(float(spot) - candle_close) / candle_close * 100 if candle_close > 0 else None
         atr = atr_raw * basis_ratio
+        ema20_raw = metric.get("ema20")
+        ema20_level = float(ema20_raw) * basis_ratio if _finite(ema20_raw) else None
         swing_high = float(swing_high_raw) * basis_ratio
         swing_low = float(swing_low_raw) * basis_ratio
         level_basis = "closed " + source_tf + " candles; 20-bar swing and ATR14; levels scaled to reference-price basis"
     long_trigger = max(float(spot), float(swing_high)) + 0.10 * atr
     short_trigger = min(float(spot), float(swing_low)) - 0.10 * atr
+    retest_long = {"status": "unavailable", "reason": "需要有效的EMA20与ATR数据"} 
+    rebound_short = {"status": "unavailable", "reason": "需要有效的EMA20与ATR数据"}
+    if ema20_level is not None and metric is not None:
+        zone_low = ema20_level - 0.15 * atr
+        zone_high = ema20_level + 0.15 * atr
+        retest_long = {
+            "status": "conditional",
+            "entry_zone": [round(zone_low, 8), round(zone_high, 8)],
+            "stop_loss": round(ema20_level - 0.80 * atr, 8),
+            "take_profit_1": round(ema20_level + 1.50 * atr, 8),
+            "take_profit_2": round(ema20_level + 2.50 * atr, 8),
+            "condition": "价格先有效站回EMA20，再回踩该区域；等待已收盘1h K线止跌确认后考虑，不接飞刀"
+        }
+        rebound_short = {
+            "status": "conditional",
+            "entry_zone": [round(zone_low, 8), round(zone_high, 8)],
+            "stop_loss": round(ema20_level + 0.80 * atr, 8),
+            "take_profit_1": round(float(spot), 8),
+            "take_profit_2": round(swing_low, 8),
+            "condition": "反弹进入EMA20阻力区后，等待已收盘1h K线转弱/受阻确认才考虑；未确认不挂盲单"
+        }
     return {
         "status": "conditional",
         "reference_price": float(spot),
@@ -132,13 +156,22 @@ def _levels(item):
             "take_profit_2": round(long_trigger + 2.5 * atr, 8),
             "condition": "仅在已收盘K线确认突破入场触发价后考虑；未触发不追单"
         },
+        "long": {
+            "entry_trigger": round(long_trigger, 8),
+            "stop_loss": round(long_trigger - 1.5 * atr, 8),
+            "take_profit_1": round(long_trigger + 1.5 * atr, 8),
+            "take_profit_2": round(long_trigger + 2.5 * atr, 8),
+            "condition": "仅在已收盘K线确认突破入场触发价后考虑；未触发不追单"
+        },
+        "pullback_long": retest_long,
         "short": {
             "entry_trigger": round(short_trigger, 8),
             "stop_loss": round(short_trigger + 1.5 * atr, 8),
             "take_profit_1": round(short_trigger - 1.5 * atr, 8),
             "take_profit_2": round(short_trigger - 2.5 * atr, 8),
             "condition": "仅在已收盘K线确认跌破入场触发价后考虑；未触发不追单"
-        }
+        },
+        "rebound_short": rebound_short
     }
 
 
