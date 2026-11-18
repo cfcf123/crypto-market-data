@@ -23,7 +23,7 @@ class MarketDataValidationTests(unittest.TestCase):
         d=sample(); d["symbols"]["BTCUSDT"]["spot_price"]["source"]="OKX"
         with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
     def test_unclosed_candle_fails(self):
-        d=sample(); d["symbols"]["BTCUSDT"]["timeframes"]["1m"]["candles"][-1]["close_time"]=int(datetime(2026,11,18,7,0,tzinfo=timezone.utc).timestamp()*1000)
+        d=sample(); d["symbols"]["BTCUSDT"]["timeframes"]["1m"]["candles"][-1]["close_time"]=int(datetime(2026,11,18,7,1,tzinfo=timezone.utc).timestamp()*1000)
         with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
     def test_insufficient_timeframes_fails(self):
         d=sample()
