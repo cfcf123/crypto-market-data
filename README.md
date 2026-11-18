@@ -7,7 +7,7 @@ Automated public-market collection for BTCUSDT and ETHUSDT.
 - Binance USD-M Futures OHLCV candles for 1d, 12h, 4h, 1h, 15m and 5m (up to 500 per interval).
 - Closed-candle indicators: EMA20/50/200, RSI14, MACD(12,26,9), Bollinger Bands(20,2), ATR14, Wilder ADX14 and 20-candle swing high/low.
 - Futures context: latest funding rate, open interest and global long/short account ratio where available.
-- Source, timestamps, candle counts and request errors are retained.
+- Source, timestamps, candle counts and request errors are retained.\n- Conservative Wyckoff evidence per timeframe: possible accumulation/distribution, Spring/UTAD candidates, SOS/SOW candidates, relative volume and effort-vs-result. Signals remain hypotheses and do not generate trades.
 
 ## Schedule
 GitHub Actions runs daily at 00:25 and 12:25 UTC (08:25 and 20:25 Asia/Shanghai). Manual runs are available in Actions → Collect crypto market data → Run workflow.
