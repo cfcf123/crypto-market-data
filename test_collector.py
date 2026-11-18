@@ -55,6 +55,17 @@ class FuturesContextValidationTests(unittest.TestCase):
         self.assertEqual(result["value"], 10.0)
         self.assertEqual(len(result.get("attempts", [])), 0)
 
+    def test_all_timeframe_provider_mappings_exist(self):
+        for tf in collector.INTERVALS:
+            self.assertIn(tf, collector.BYBIT_INTERVAL)
+            self.assertIn(tf, collector.OKX_BAR)
+
+    def test_normalize_excludes_open_candle(self):
+        now_ms = 120000
+        rows = [[0, "1", "2", "0.5", "1.5", "10"], [60000, "1.5", "2.5", "1", "2", "11"]]
+        out = collector.normalize(rows, "test", "1m", now_ms, bybit=True)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["open_time"], 0)
 
 if __name__ == "__main__":
     unittest.main()
