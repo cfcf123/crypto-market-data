@@ -159,7 +159,7 @@ def analyze_symbol(item):
     negative_weight = sum(TIMEFRAME_WEIGHTS[tf] for tf, row in evidence.items() if row["score"] is not None and row["score"] < 0)
     conflict = (2 * min(positive_weight, negative_weight) / (positive_weight + negative_weight)
                 if positive_weight + negative_weight else 0.0)
-    neutral = _clamp(0.55 - 0.30 * abs(final_score) + 0.15 * conflict, 0.25, 0.75)
+    neutral = _clamp(0.55 - 0.30 * abs(final_score) + 0.15 * conflict + 0.35 * (1.0 - available_weight), 0.25, 0.85)
     long_weight = (1 - neutral) * (1 + final_score) / 2
     short_weight = (1 - neutral) * (1 - final_score) / 2
     total = long_weight + short_weight + neutral
