@@ -8,6 +8,8 @@ DATA = Path("output/market-data.json")
 REPORT = Path("output/data-quality.json")
 SYMBOLS = ("BTCUSDT", "ETHUSDT")
 REQUIRED_TFS = ("1d", "12h", "4h", "1h", "15m", "5m", "1m")
+MAX_CANDLE_AGE = {"1m":600,"5m":1200,"15m":2700,"1h":10800,"4h":43200,"12h":129600,"1d":129600}
+MAX_SPOT_AGE = 300
 
 def parse_dt(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -32,6 +34,11 @@ def validate(data, now=None):
             raise ValueError(f"{symbol}: BINANCE authority/source mismatch")
         if spot.get("source_status") not in ("ok", "fallback"):
             raise ValueError(f"{symbol}: invalid spot source_status")
+        if not spot.get("observed_at"):
+            raise ValueError(f"{symbol}: spot price missing observed_at timestamp")
+        spot_age = (now - parse_dt(spot["observed_at"])).total_seconds()
+        if spot_age < -60 or spot_age > MAX_SPOT_AGE:
+            raise ValueError(f"{symbol}: spot price is stale or future-dated ({spot_age:.0f}s)")
         tfs = item.get("timeframes", {})
         usable = {}
         for tf in REQUIRED_TFS:
@@ -44,8 +51,18 @@ def validate(data, now=None):
                     raise ValueError(f"{symbol}/{tf}: candles not strictly chronological")
                 if any(not isinstance(c.get("close_time"), (int, float)) or c["close_time"] >= now.timestamp()*1000 for c in candles):
                     raise ValueError(f"{symbol}/{tf}: contains unclosed/future candle")
-                if any(not all(math.isfinite(float(c[k])) for k in ("open","high","low","close","volume")) for c in candles):
-                    raise ValueError(f"{symbol}/{tf}: non-finite candle field")
+                latest_age = now.timestamp() - float(candles[-1]["close_time"]) / 1000
+                if latest_age < 0 or latest_age > MAX_CANDLE_AGE[tf]:
+                    raise ValueError(f"{symbol}/{tf}: latest closed candle is stale ({latest_age:.0f}s)")
+                for candle in candles:
+                    try:
+                        o,h,l,close,volume = (float(candle[k]) for k in ("open","high","low","close","volume"))
+                    except (KeyError,TypeError,ValueError):
+                        raise ValueError(f"{symbol}/{tf}: missing/invalid OHLCV field")
+                    if not all(math.isfinite(x) for x in (o,h,l,close,volume)):
+                        raise ValueError(f"{symbol}/{tf}: non-finite candle field")
+                    if volume < 0 or h < max(o,close,l) or l > min(o,close,h):
+                        raise ValueError(f"{symbol}/{tf}: invalid OHLCV relationship")
             usable[tf] = {"ok": bool(good), "source": entry.get("exchange"), "candles": len(candles)}
         count = sum(1 for v in usable.values() if v["ok"])
         if count < 3:
