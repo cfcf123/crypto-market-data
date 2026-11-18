@@ -283,9 +283,15 @@ def validate_context_response(provider, metric, data):
         if not rows: raise ValueError("empty OKX " + metric + " response")
         row = rows[0]
         if metric == "global_long_short_ratio":
-            if "ratio" not in row:
-                raise ValueError("missing OKX ratio")
-            value = float(row["ratio"])
+            # OKX Rubik contract-wide endpoint returns rows as [timestamp, ratio].
+            # Retain dict support for compatible/legacy payload variants.
+            if isinstance(row, (list, tuple)) and len(row) >= 2:
+                value = float(row[1])
+            elif isinstance(row, dict) and "ratio" in row:
+                value = float(row["ratio"])
+            else:
+                keys = list(row.keys()) if isinstance(row, dict) else type(row).__name__
+                raise ValueError("missing OKX ratio field; row_shape=" + str(keys))
         elif metric == "funding_rate":
             if "fundingRate" not in row: raise ValueError("missing OKX fundingRate")
             value = float(row["fundingRate"])

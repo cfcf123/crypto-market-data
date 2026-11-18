@@ -45,7 +45,14 @@ class FuturesContextValidationTests(unittest.TestCase):
         out = collector.validate_context_response("OKX USDT Swap", "open_interest", data)
         self.assertEqual(out["value"], 98765.4)
 
-    def test_okx_long_short_ratio(self):
+    def test_okx_long_short_ratio_array_response(self):
+        # Official OKX Rubik API returns each data row as [ts, ratio].
+        data = {"code": "0", "data": [["1794988800000", "1.25"]]}
+        out = collector.validate_context_response("OKX USDT Swap", "global_long_short_ratio", data)
+        self.assertEqual(out["value"], 1.25)
+        self.assertEqual(out["raw"], data)
+
+    def test_okx_long_short_ratio_legacy_object_response(self):
         data = {"code": "0", "data": [{"ratio": "1.25"}]}
         out = collector.validate_context_response("OKX USDT Swap", "global_long_short_ratio", data)
         self.assertEqual(out["value"], 1.25)
