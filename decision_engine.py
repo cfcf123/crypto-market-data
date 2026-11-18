@@ -117,27 +117,39 @@ def _levels(item):
         level_basis = "closed " + source_tf + " candles; 20-bar swing and ATR14; levels scaled to reference-price basis"
     long_trigger = max(float(spot), float(swing_high)) + 0.10 * atr
     short_trigger = min(float(spot), float(swing_low)) - 0.10 * atr
-    retest_long = {"status": "unavailable", "reason": "需要有效的EMA20与ATR数据"} 
-    rebound_short = {"status": "unavailable", "reason": "需要有效的EMA20与ATR数据"}
+    retest_long = {"status": "unavailable", "reason": "缺少有效EMA20/ATR数据，不能计算回踩区域"}
+    rebound_short = {"status": "unavailable", "reason": "缺少有效EMA20/ATR数据，不能计算反弹区域"}
     if ema20_level is not None and metric is not None:
         zone_low = ema20_level - 0.15 * atr
         zone_high = ema20_level + 0.15 * atr
-        retest_long = {
-            "status": "conditional",
-            "entry_zone": [round(zone_low, 8), round(zone_high, 8)],
-            "stop_loss": round(ema20_level - 0.80 * atr, 8),
-            "take_profit_1": round(ema20_level + 1.50 * atr, 8),
-            "take_profit_2": round(ema20_level + 2.50 * atr, 8),
-            "condition": "价格先有效站回EMA20，再回踩该区域；等待已收盘1h K线止跌确认后考虑，不接飞刀"
-        }
-        rebound_short = {
-            "status": "conditional",
-            "entry_zone": [round(zone_low, 8), round(zone_high, 8)],
-            "stop_loss": round(ema20_level + 0.80 * atr, 8),
-            "take_profit_1": round(float(spot), 8),
-            "take_profit_2": round(swing_low, 8),
-            "condition": "反弹进入EMA20阻力区后，等待已收盘1h K线转弱/受阻确认才考虑；未确认不挂盲单"
-        }
+        if zone_high < float(spot):
+            retest_long = {
+                "status": "conditional",
+                "entry_zone": [round(zone_low, 8), round(zone_high, 8)],
+                "stop_loss": round(ema20_level - 0.80 * atr, 8),
+                "take_profit_1": round(ema20_level + 1.50 * atr, 8),
+                "take_profit_2": round(ema20_level + 2.50 * atr, 8),
+                "condition": "回踩区域低于参考价；价格回踩该区域后，等待已收盘1h K线止跌确认才考虑，不接飞刀"
+            }
+        else:
+            retest_long = {
+                "status": "unavailable",
+                "reason": "EMA20回踩区未处于参考价下方；当前不构成回踩做多位置，需价格结构改变后重新评估"
+            }
+        if zone_low > float(spot):
+            rebound_short = {
+                "status": "conditional",
+                "entry_zone": [round(zone_low, 8), round(zone_high, 8)],
+                "stop_loss": round(ema20_level + 0.80 * atr, 8),
+                "take_profit_1": round(float(spot), 8),
+                "take_profit_2": round(swing_low, 8),
+                "condition": "反弹阻力区高于参考价；价格反弹进入该区域后，等待已收盘1h K线转弱/受阻确认才考虑"
+            }
+        else:
+            rebound_short = {
+                "status": "unavailable",
+                "reason": "EMA20阻力区未处于参考价上方；当前不构成反弹做空位置，需价格结构改变后重新评估"
+            }
     return {
         "status": "conditional",
         "reference_price": float(spot),
