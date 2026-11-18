@@ -342,6 +342,8 @@ def fetch_futures_context(symbol):
 def aggregate_closed_candles(daily_candles, timeframe, now=None):
     """Aggregate closed UTC daily candles into completed weekly/monthly bars only."""
     from datetime import timedelta
+    if timeframe not in ("1w", "1M"):
+        raise ValueError("unsupported aggregate timeframe: " + str(timeframe))
     now = now or datetime.now(timezone.utc)
     buckets = {}
     for candle in daily_candles:
@@ -350,31 +352,41 @@ def aggregate_closed_candles(daily_candles, timeframe, now=None):
             start = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc) - timedelta(days=dt.weekday())
             key = start.strftime("%G-W%V")
             end = start + timedelta(days=7)
-        elif timeframe == "1M":
+            expected_days = 7
+        else:
             start = datetime(dt.year, dt.month, 1, tzinfo=timezone.utc)
             key = start.strftime("%Y-%m")
             end = datetime(dt.year + (dt.month == 12), (dt.month % 12) + 1, 1, tzinfo=timezone.utc)
-        else:
-            raise ValueError("unsupported aggregate timeframe: " + timeframe)
+            expected_days = (end - start).days
         if end > now:
             continue
-        buckets.setdefault(key, []).append(candle)
+        bucket = buckets.setdefault(key, {"start": start, "end": end, "expected_days": expected_days, "rows": []})
+        bucket["rows"].append(candle)
 
     result = []
     for key in sorted(buckets):
-        rows = sorted(buckets[key], key=lambda x: x["open_time"])
-        if rows:
-            result.append({
-                "open_time": rows[0]["open_time"],
-                "close_time": rows[-1]["close_time"],
-                "open": rows[0]["open"],
-                "high": max(x["high"] for x in rows),
-                "low": min(x["low"] for x in rows),
-                "close": rows[-1]["close"],
-                "volume": sum(x["volume"] for x in rows),
-                "source_days": len(rows),
-                "aggregation": "UTC_" + timeframe
-            })
+        bucket = buckets[key]
+        rows = sorted(bucket["rows"], key=lambda x: x["open_time"])
+        # Never publish a shortened period as a completed weekly/monthly candle.
+        # Require one unique daily candle for every UTC calendar day in the bucket.
+        expected_times = {
+            int((bucket["start"] + timedelta(days=i)).timestamp() * 1000)
+            for i in range(bucket["expected_days"])
+        }
+        actual_times = [x["open_time"] for x in rows]
+        if len(rows) != bucket["expected_days"] or set(actual_times) != expected_times:
+            continue
+        result.append({
+            "open_time": rows[0]["open_time"],
+            "close_time": rows[-1]["close_time"],
+            "open": rows[0]["open"],
+            "high": max(x["high"] for x in rows),
+            "low": min(x["low"] for x in rows),
+            "close": rows[-1]["close"],
+            "volume": sum(x["volume"] for x in rows),
+            "source_days": len(rows),
+            "aggregation": "UTC_" + timeframe
+        })
     return result
 
 
