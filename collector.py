@@ -55,7 +55,7 @@ def fetch_price(symbol):
             d=get_json(host+"/api/v3/ticker/price?symbol="+symbol)
             p=float(d["price"])
             if d.get("symbol") != symbol or p <= 0: raise ValueError("symbol/price validation failed")
-            return {"price":p,"source":"Binance Spot: "+host,"source_status":"ok","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors,"cross_exchange":validate_price_cross_exchange(symbol,p)}
+            return {"price":p,"source":"Binance Spot: "+host,"source_status":"ok","price_authority":"BINANCE","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors,"cross_exchange":validate_price_cross_exchange(symbol,p)}
         except Exception as e:
             errors.append({"source":"Binance Spot: "+host,"error":str(e)})
     try:
@@ -327,7 +327,7 @@ def fetch_futures_context(symbol):
     return out
 
 def main():
-    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.5","indicator_schema_version":"1.0",
+    result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.6","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
