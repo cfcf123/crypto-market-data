@@ -51,6 +51,24 @@ class MarketDataValidationTests(unittest.TestCase):
         out=validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
         self.assertEqual(out["overall"], "ok")
         self.assertFalse(out["symbols"]["BTCUSDT"]["derivatives"]["funding_rate"]["available"])
+    def test_freshness_diagnostics_include_age_limits_and_collection_duration(self):
+        d=sample()
+        started = datetime(2026,11,18,6,59,tzinfo=timezone.utc)
+        d["collection_started_at"] = started.isoformat()
+        d["collection_completed_at"] = d["generated_at"]
+        out=validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+        self.assertEqual(out["collection_duration_seconds"], 60.0)
+        spot=out["symbols"]["BTCUSDT"]["spot"]["freshness"]
+        self.assertEqual(spot["age_seconds"], 60)
+        self.assertEqual(spot["max_age_seconds"], 300)
+        one_min=out["symbols"]["BTCUSDT"]["timeframes"]["1m"]
+        self.assertEqual(one_min["status"], "fresh")
+        self.assertEqual(one_min["max_age_seconds"], 600)
+        self.assertIsNotNone(one_min["latest_closed_at"])
+        week=out["symbols"]["BTCUSDT"]["higher_timeframes"]["1w"]
+        self.assertEqual(week["status"], "fresh")
+        self.assertIsNotNone(week["age_seconds"])
+
     def test_missing_price_fails(self):
         d=sample(); d["symbols"]["ETHUSDT"]["spot_price"]["price"]=None
         with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
