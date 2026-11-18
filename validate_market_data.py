@@ -10,6 +10,7 @@ SYMBOLS = ("BTCUSDT", "ETHUSDT")
 REQUIRED_TFS = ("1d", "12h", "4h", "1h", "15m", "5m", "1m")
 MAX_CANDLE_AGE = {"1m":600,"5m":1200,"15m":2700,"1h":10800,"4h":43200,"12h":129600,"1d":129600}
 MAX_SPOT_AGE = 300
+MAX_CONTEXT_RETRIEVAL_AGE = 300
 
 def parse_dt(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -139,8 +140,18 @@ def validate(data, now=None):
         metrics = {}
         for metric in ("funding_rate", "open_interest", "global_long_short_ratio"):
             value = ctx.get(metric, {})
-            metrics[metric] = {"available": isinstance(value.get("value"), (int,float)) and math.isfinite(value.get("value", float("nan"))),
-                               "source": value.get("source"), "status": value.get("status", "ok" if "value" in value else "unavailable")}
+            available = isinstance(value.get("value"), (int,float)) and math.isfinite(value.get("value", float("nan")))
+            retrieved_at = value.get("observed_at")
+            retrieval_age = (now - parse_dt(retrieved_at)).total_seconds() if retrieved_at else None
+            if retrieval_age is not None and (retrieval_age < -60 or retrieval_age > MAX_CONTEXT_RETRIEVAL_AGE):
+                raise ValueError(f"{symbol}/{metric}: context retrieval timestamp is stale or future-dated ({retrieval_age:.0f}s)")
+            metrics[metric] = {"available": available,
+                               "source": value.get("source"),
+                               "status": value.get("status", "ok" if available else "unavailable"),
+                               "retrieved_at": retrieved_at,
+                               "retrieval_age_seconds": round(retrieval_age) if retrieval_age is not None else None,
+                               "max_retrieval_age_seconds": MAX_CONTEXT_RETRIEVAL_AGE,
+                               "freshness": "fresh" if available and retrieval_age is not None else ("timestamp_missing" if available else "unavailable")}
         report["symbols"][symbol] = {
             "spot": {"price": price, "source": spot.get("source"), "authority": authority or "NON_BINANCE_FALLBACK", "status": spot.get("source_status"), "freshness": spot_freshness},
             "timeframes": usable, "usable_timeframes": count, "higher_timeframes": higher_report, "derivatives": metrics
