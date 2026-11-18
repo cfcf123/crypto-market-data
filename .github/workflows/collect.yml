@@ -1,1 +1,44 @@
-name: Collect crypto market data\n\non:\n  workflow_dispatch:\n    inputs:\n      reason:\n        description: "Reason for manual collection"\n        required: false\n        default: "manual validation"\n  push:\n    branches: [main]\n  schedule:\n    - cron: "25 0 * * *"\n    - cron: "25 12 * * *"\n\npermissions:\n  contents: read\n\nconcurrency:\n  group: crypto-market-data\n  cancel-in-progress: false\n\njobs:\n  collect:\n    runs-on: ubuntu-latest\n    timeout-minutes: 15\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v4\n\n      - name: Setup Python\n        uses: actions/setup-python@v5\n        with:\n          python-version: "3.12"\n          cache: "pip"\n\n      - name: Identify trigger\n        run: |\n          echo "event=${{ github.event_name }}" | tee trigger.txt\n          echo "run_id=${{ github.run_id }}" | tee -a trigger.txt\n          echo "run_number=${{ github.run_number }}" | tee -a trigger.txt\n          echo "sha=${{ github.sha }}" | tee -a trigger.txt\n          echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a trigger.txt\n\n      - name: Run collector unit tests\n        run: python -m unittest -v\n\n      - name: Collect public market data\n        run: python collector.py\n\n      - name: Validate market-data artifact\n        run: python -c "import json; from pathlib import Path; p=Path("output/market-data.json"); d=json.loads(p.read_text()); assert isinstance(d,dict); assert p.stat().st_size>0; print("validated", p.stat().st_size, "bytes")"\n\n      - name: Add collection metadata\n        if: always()\n        run: |\n          mkdir -p output\n          echo "event=${{ github.event_name }}" > output/run-metadata.txt\n          echo "run_id=${{ github.run_id }}" >> output/run-metadata.txt\n          echo "run_number=${{ github.run_number }}" >> output/run-metadata.txt\n          echo "sha=${{ github.sha }}" >> output/run-metadata.txt\n          echo "collected_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> output/run-metadata.txt\n\n      - name: Upload market data artifact\n        if: always()\n        uses: actions/upload-artifact@v4\n        with:\n          name: market-data-${{ github.run_number }}\n          path: |\n            output/market-data.json\n            output/run-metadata.txt\n            trigger.txt\n          if-no-files-found: error\n          retention-days: 7\n
+name: Collect crypto market data
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "25 0 * * *"
+    - cron: "25 12 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crypto-market-data
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Identify trigger
+        run: echo "event=${{ github.event_name }} run=${{ github.run_number }} sha=${{ github.sha }}" | tee trigger.txt
+      - name: Run collector unit tests
+        run: python -m unittest -v
+      - name: Collect public market data
+        run: python collector.py
+      - name: Validate output exists
+        run: test -s output/market-data.json
+      - name: Upload market data artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-data-${{ github.run_number }}
+          path: |
+            output/market-data.json
+            trigger.txt
+          if-no-files-found: error
+          retention-days: 7
