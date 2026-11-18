@@ -42,7 +42,7 @@ def sample():
           "timeframes":timeframes,
           "higher_timeframes":{"1w":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1w"),"wyckoff":{"status":"ok"}},
                                "1M":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1M"),"wyckoff":{"status":"ok"}}},
-          "futures_context":{"funding_rate":{"status":"unavailable"},"open_interest":{"value":1000.0,"source":"OKX"},"global_long_short_ratio":{"status":"unavailable"}}}
+          "futures_context":{"funding_rate":{"status":"unavailable"},"open_interest":{"value":1000.0,"source":"OKX","observed_at":observed},"global_long_short_ratio":{"status":"unavailable"}}}
       for s in ("BTCUSDT","ETHUSDT")}}
 
 class MarketDataValidationTests(unittest.TestCase):
@@ -68,6 +68,20 @@ class MarketDataValidationTests(unittest.TestCase):
         week=out["symbols"]["BTCUSDT"]["higher_timeframes"]["1w"]
         self.assertEqual(week["status"], "fresh")
         self.assertIsNotNone(week["age_seconds"])
+
+    def test_derivative_retrieval_freshness_is_reported(self):
+        d=sample()
+        out=validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+        oi=out["symbols"]["BTCUSDT"]["derivatives"]["open_interest"]
+        self.assertEqual(oi["freshness"], "fresh")
+        self.assertEqual(oi["retrieval_age_seconds"], 60)
+        self.assertEqual(oi["max_retrieval_age_seconds"], 300)
+
+    def test_stale_derivative_retrieval_fails(self):
+        d=sample()
+        d["symbols"]["BTCUSDT"]["futures_context"]["open_interest"]["observed_at"]="2026-11-18T06:50:00+00:00"
+        with self.assertRaises(ValueError):
+            validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
 
     def test_missing_price_fails(self):
         d=sample(); d["symbols"]["ETHUSDT"]["spot_price"]["price"]=None
