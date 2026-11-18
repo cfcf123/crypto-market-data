@@ -7,6 +7,7 @@ from wyckoff import analyze as analyze_wyckoff
 TIMEOUT = 12
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 INTERVALS = ["1d", "12h", "4h", "1h", "15m", "5m", "1m"]
+KLINE_LIMITS = {"1d": 800}
 PRICE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com",
  "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com",
  "https://api3.binance.com", "https://api4.binance.com"]
@@ -420,7 +421,7 @@ def main():
     def collect_symbol(symbol):
         item={"spot_price":fetch_price(symbol),"futures_context":fetch_futures_context(symbol),"timeframes":{}}
         with ThreadPoolExecutor(max_workers=len(INTERVALS)) as pool:
-            jobs={pool.submit(fetch_klines,symbol,tf):tf for tf in INTERVALS}
+            jobs={pool.submit(fetch_klines,symbol,tf,KLINE_LIMITS.get(tf,500)):tf for tf in INTERVALS}
             for job in as_completed(jobs):
                 tf=jobs[job]
                 try: k=job.result()
