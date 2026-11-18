@@ -340,40 +340,53 @@ def fetch_futures_context(symbol):
     return out
 
 def aggregate_closed_candles(daily_candles, timeframe, now=None):
-    """Aggregate closed UTC daily candles into completed weekly/monthly bars only."""
+    """Aggregate complete weeks/months aligned to the source exchange's daily candle calendar."""
     from datetime import timedelta
     if timeframe not in ("1w", "1M"):
         raise ValueError("unsupported aggregate timeframe: " + str(timeframe))
+    if not daily_candles:
+        return []
     now = now or datetime.now(timezone.utc)
+    day_ms = 86400000
+    # Exchanges may anchor daily candles at different UTC offsets (e.g. OKX UTC+8).
+    # Align higher periods to the actual daily-candle boundary instead of assuming UTC midnight.
+    offsets = [int(x["open_time"]) % day_ms for x in daily_candles]
+    offset_ms = max(set(offsets), key=offsets.count)
+    offset = timedelta(milliseconds=offset_ms)
     buckets = {}
     for candle in daily_candles:
-        dt = datetime.fromtimestamp(candle["open_time"] / 1000, timezone.utc)
-        if timeframe == "1w":
-            start = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc) - timedelta(days=dt.weekday())
-            key = start.strftime("%G-W%V")
-            end = start + timedelta(days=7)
-            expected_days = 7
-        else:
-            start = datetime(dt.year, dt.month, 1, tzinfo=timezone.utc)
-            key = start.strftime("%Y-%m")
-            end = datetime(dt.year + (dt.month == 12), (dt.month % 12) + 1, 1, tzinfo=timezone.utc)
-            expected_days = (end - start).days
-        if end > now:
+        open_ms = int(candle["open_time"])
+        if open_ms % day_ms != offset_ms:
             continue
-        bucket = buckets.setdefault(key, {"start": start, "end": end, "expected_days": expected_days, "rows": []})
+        dt = datetime.fromtimestamp(open_ms / 1000, timezone.utc) - offset
+        if timeframe == "1w":
+            local_start = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc) - timedelta(days=dt.weekday())
+            local_end = local_start + timedelta(days=7)
+            key = local_start.strftime("%G-W%V")
+        else:
+            local_start = datetime(dt.year, dt.month, 1, tzinfo=timezone.utc)
+            local_end = datetime(dt.year + (dt.month == 12), (dt.month % 12) + 1, 1, tzinfo=timezone.utc)
+            key = local_start.strftime("%Y-%m")
+        period_start = local_start + offset
+        period_end = local_end + offset
+        expected_days = (local_end - local_start).days
+        if period_end > now:
+            continue
+        bucket = buckets.setdefault(key, {
+            "start": period_start, "expected_days": expected_days, "rows": []
+        })
         bucket["rows"].append(candle)
 
     result = []
     for key in sorted(buckets):
         bucket = buckets[key]
         rows = sorted(bucket["rows"], key=lambda x: x["open_time"])
-        # Never publish a shortened period as a completed weekly/monthly candle.
-        # Require one unique daily candle for every UTC calendar day in the bucket.
         expected_times = {
             int((bucket["start"] + timedelta(days=i)).timestamp() * 1000)
             for i in range(bucket["expected_days"])
         }
-        actual_times = [x["open_time"] for x in rows]
+        actual_times = [int(x["open_time"]) for x in rows]
+        # Require one unique daily candle for every expected source-calendar day.
         if len(rows) != bucket["expected_days"] or set(actual_times) != expected_times:
             continue
         result.append({
@@ -385,10 +398,10 @@ def aggregate_closed_candles(daily_candles, timeframe, now=None):
             "close": rows[-1]["close"],
             "volume": sum(x["volume"] for x in rows),
             "source_days": len(rows),
-            "aggregation": "UTC_" + timeframe
+            "calendar_offset_hours": round(offset_ms / 3600000, 3),
+            "aggregation": "SOURCE_DAILY_CALENDAR_" + timeframe
         })
     return result
-
 
 def main():
     result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.6","indicator_schema_version":"1.0",
