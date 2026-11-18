@@ -339,6 +339,45 @@ def fetch_futures_context(symbol):
       ("OKX USDT Swap",lambda:get_json("https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?"+qs({"ccy":ccy,"period":"1H"})))], "global_long_short_ratio")
     return out
 
+def aggregate_closed_candles(daily_candles, timeframe, now=None):
+    """Aggregate closed UTC daily candles into completed weekly/monthly bars only."""
+    from datetime import timedelta
+    now = now or datetime.now(timezone.utc)
+    buckets = {}
+    for candle in daily_candles:
+        dt = datetime.fromtimestamp(candle["open_time"] / 1000, timezone.utc)
+        if timeframe == "1w":
+            start = datetime(dt.year, dt.month, dt.day, tzinfo=timezone.utc) - timedelta(days=dt.weekday())
+            key = start.strftime("%G-W%V")
+            end = start + timedelta(days=7)
+        elif timeframe == "1M":
+            start = datetime(dt.year, dt.month, 1, tzinfo=timezone.utc)
+            key = start.strftime("%Y-%m")
+            end = datetime(dt.year + (dt.month == 12), (dt.month % 12) + 1, 1, tzinfo=timezone.utc)
+        else:
+            raise ValueError("unsupported aggregate timeframe: " + timeframe)
+        if end > now:
+            continue
+        buckets.setdefault(key, []).append(candle)
+
+    result = []
+    for key in sorted(buckets):
+        rows = sorted(buckets[key], key=lambda x: x["open_time"])
+        if rows:
+            result.append({
+                "open_time": rows[0]["open_time"],
+                "close_time": rows[-1]["close_time"],
+                "open": rows[0]["open"],
+                "high": max(x["high"] for x in rows),
+                "low": min(x["low"] for x in rows),
+                "close": rows[-1]["close"],
+                "volume": sum(x["volume"] for x in rows),
+                "source_days": len(rows),
+                "aggregation": "UTC_" + timeframe
+            })
+    return result
+
+
 def main():
     result={"generated_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.6","indicator_schema_version":"1.0",
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
@@ -358,6 +397,24 @@ def main():
                     k["indicators"]["source_exchange"]=k["exchange"]
                     k["wyckoff"]=analyze_wyckoff(k["candles"])
                 item["timeframes"][tf]=k
+        # Macro context is aggregated from the same daily futures source.
+        # No cross-exchange candle mixing and no unfinished week/month bars.
+        daily=item["timeframes"].get("1d",{})
+        if "candles" in daily:
+            item["higher_timeframes"]={}
+            for htf, lookback, vol_window in (("1w",40,20),("1M",6,6)):
+                bars=aggregate_closed_candles(daily["candles"],htf)
+                item["higher_timeframes"][htf]={
+                    "source_exchange":daily.get("exchange"),
+                    "source_timeframe":"1d",
+                    "aggregation":"UTC calendar buckets; completed periods only",
+                    "received_closed":len(bars),
+                    "candles":bars,
+                    "wyckoff":analyze_wyckoff(bars,lookback=lookback,volume_window=vol_window)
+                }
+        else:
+            item["higher_timeframes"]={"1w":{"status":"unavailable","reason":"daily source unavailable"},
+                                       "1M":{"status":"unavailable","reason":"daily source unavailable"}}
         return symbol,item
     with ThreadPoolExecutor(max_workers=len(SYMBOLS)) as pool:
         jobs={pool.submit(collect_symbol,s):s for s in SYMBOLS}
