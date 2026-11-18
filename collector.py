@@ -432,7 +432,7 @@ def main():
                 item["higher_timeframes"][htf]={
                     "source_exchange":daily.get("exchange"),
                     "source_timeframe":"1d",
-                    "aggregation":"UTC calendar buckets; completed periods only",
+                    "aggregation":"SOURCE_DAILY_CALENDAR; completed periods only",
                     "received_closed":len(bars),
                     "candles":bars,
                     "wyckoff":analyze_wyckoff(bars,lookback=lookback,volume_window=vol_window)
