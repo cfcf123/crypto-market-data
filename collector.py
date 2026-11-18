@@ -2,6 +2,7 @@
 """Public BTCUSDT/ETHUSDT collector. Read-only; no credentials or trading permissions."""
 import json, os, time, urllib.request, urllib.parse
 from datetime import datetime, timezone
+from wyckoff import analyze as analyze_wyckoff
 
 TIMEOUT = 12
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
@@ -355,6 +356,7 @@ def main():
                     k["indicators"]=indicators(k["candles"])
                     k["indicators"]["calculated_from_closed_candles"]=True
                     k["indicators"]["source_exchange"]=k["exchange"]
+                    k["wyckoff"]=analyze_wyckoff(k["candles"])
                 item["timeframes"][tf]=k
         return symbol,item
     with ThreadPoolExecutor(max_workers=len(SYMBOLS)) as pool:
