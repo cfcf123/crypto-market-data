@@ -30,13 +30,13 @@ def sample():
     generated = datetime(2026,11,18,7,0,tzinfo=timezone.utc)
     now_ms = int(generated.timestamp()*1000)
     durations = {"1d":86400000,"12h":43200000,"4h":14400000,"1h":3600000,"15m":900000,"5m":300000,"1m":60000}
+    observed = generated.isoformat()
     timeframes = {}
     for tf,duration in durations.items():
         start = now_ms - duration*300
         candles = [{"open_time":start+i*duration,"close_time":start+(i+1)*duration-1,
                     "open":1.0,"high":2.0,"low":0.5,"close":1.5,"volume":10.0} for i in range(300)]
         timeframes[tf] = {"source_status":"ok","exchange":"OKX USDT Swap","retrieved_at":observed,"candles":candles}
-    observed = generated.isoformat()
     return {"generated_at":observed,"symbols":{
       s: {"spot_price":{"price":100.0,"source":"Binance Spot: https://data-api.binance.vision","source_status":"ok","price_authority":"BINANCE","observed_at":observed},
           "timeframes":timeframes,
