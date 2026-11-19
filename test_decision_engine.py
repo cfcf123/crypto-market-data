@@ -114,6 +114,20 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertEqual(with_oi["derivatives_adjustment"], 0.0)
         self.assertEqual(with_oi["evidence_score"], baseline["evidence_score"])
 
+    def test_r_multiples_are_present_for_all_conditional_setups(self):
+        for direction in ("bull", "bear"):
+            levels = analyze_symbol(make_item(direction))["levels"]
+            for key in ("long", "short"):
+                rr = levels[key]["risk_reward"]
+                self.assertEqual(rr["status"], "calculated")
+                self.assertAlmostEqual(rr["tp1_r"], 1.0, places=3)
+                self.assertAlmostEqual(rr["tp2_r"], 1.667, places=3)
+            for key in ("pullback_long", "rebound_short"):
+                if levels[key]["status"] == "conditional":
+                    self.assertEqual(levels[key]["risk_reward"]["status"], "calculated")
+                    self.assertGreater(levels[key]["risk_reward"]["tp1_r"], 0)
+                    self.assertGreater(levels[key]["risk_reward"]["tp2_r"], 0)
+
     def test_dataset_missing_symbol_is_explicit(self):
         result = analyze_dataset({"symbols": {"BTCUSDT": make_item()}})
         self.assertEqual(result["symbols"]["ETHUSDT"]["status"], "unavailable")
