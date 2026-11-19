@@ -1,0 +1,1 @@
+Initial task-trigger marker. Future report executions update this file to create a GitHub push event and request one fresh collection.
