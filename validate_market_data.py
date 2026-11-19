@@ -41,20 +41,28 @@ def validate(data, now=None):
             raise ValueError(f"missing symbol {symbol}")
         spot = item.get("spot_price") or {}
         price = spot.get("price")
-        if not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0:
-            raise ValueError(f"{symbol}: missing/invalid spot price")
         authority = spot.get("price_authority")
-        if authority == "BINANCE" and not str(spot.get("source", "")).startswith("Binance Spot"):
-            raise ValueError(f"{symbol}: BINANCE authority/source mismatch")
-        if spot.get("source_status") not in ("ok", "fallback"):
-            raise ValueError(f"{symbol}: invalid spot source_status")
-        if not spot.get("observed_at"):
-            raise ValueError(f"{symbol}: spot price missing observed_at timestamp")
-        spot_age = (now - parse_dt(spot["observed_at"])).total_seconds()
-        if spot_age < -60 or spot_age > MAX_SPOT_AGE:
-            raise ValueError(f"{symbol}: spot price is stale or future-dated ({spot_age:.0f}s)")
-        spot_freshness = {"age_seconds": round(spot_age), "max_age_seconds": MAX_SPOT_AGE,
-                          "status": "fresh", "observed_at": spot.get("observed_at")}
+        if spot.get("source_status") == "unavailable":
+            if price is not None:
+                raise ValueError(f"{symbol}: unavailable spot source must not contain a substitute price")
+            if authority != "BINANCE_REQUIRED":
+                raise ValueError(f"{symbol}: unavailable spot source missing Binance-only authority marker")
+            spot_freshness = {"status":"unavailable","reason":spot.get("error","Binance Spot unavailable"),
+                              "attempts":spot.get("attempts",[])}
+        else:
+            if not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0:
+                raise ValueError(f"{symbol}: missing/invalid spot price")
+            if authority != "BINANCE" or not str(spot.get("source", "")).startswith("Binance Spot"):
+                raise ValueError(f"{symbol}: non-Binance spot price is not authoritative")
+            if spot.get("source_status") != "ok":
+                raise ValueError(f"{symbol}: invalid Binance spot source_status")
+            if not spot.get("observed_at"):
+                raise ValueError(f"{symbol}: spot price missing observed_at timestamp")
+            spot_age = (now - parse_dt(spot["observed_at"])).total_seconds()
+            if spot_age < -60 or spot_age > MAX_SPOT_AGE:
+                raise ValueError(f"{symbol}: spot price is stale or future-dated ({spot_age:.0f}s)")
+            spot_freshness = {"age_seconds": round(spot_age), "max_age_seconds": MAX_SPOT_AGE,
+                              "status": "fresh", "observed_at": spot.get("observed_at")}
         tfs = item.get("timeframes", {})
         usable = {}
         for tf in REQUIRED_TFS:
