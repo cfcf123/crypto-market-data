@@ -15,7 +15,7 @@ Automated public-market collection for BTCUSDT and ETHUSDT.
 
 ## Schedule and recovery
 - Primary collector: every 10 minutes at minutes 03, 13, 23, 33, 43 and 53 UTC.
-- Freshness watchdog: checks every 5 minutes at offset minutes and calls `workflow_dispatch` when the latest successful collection is older than 600 seconds. It avoids duplicate dispatches when a collection is already queued/running and cancels a collection stuck for more than 15 minutes.
+- Freshness watchdog: checks every 5 minutes at offset minutes and calls `workflow_dispatch` when the latest successful collection is older than 570 seconds, leaving a safety margin for artifact creation time. It avoids duplicate dispatches when a collection is already queued/running and cancels a collection stuck for more than 15 minutes.
 - Manual collection: Actions -> Collect crypto market data -> Run workflow.
 - Pushes to `main` also trigger collection and validation.
 - GitHub scheduled events are best-effort and may be delayed or dropped under platform load. The watchdog is a recovery layer, not a guarantee of exact start times.
@@ -28,7 +28,7 @@ Requires Python 3.10+ and no third-party packages: `python collector.py`
 
 ## Safety and limitations
 - Public market-data endpoints only. No exchange login, API key, secret, withdrawal or trading permission is needed.
-- Candle series are never mixed across exchanges. Failed requests are reported rather than replaced with fabricated values.
+- Candle series are never mixed across exchanges. Failed requests are reported rather than replaced with fabricated data.
 - GitHub-hosted runners and exchange endpoints may be delayed, rate-limited or regionally unavailable. Cron is best-effort, not a guaranteed execution time.
 - This is a data collector, not an automated trading system or financial advice.
 - Never add passwords, API secrets, recovery codes or private account data to this public repository.

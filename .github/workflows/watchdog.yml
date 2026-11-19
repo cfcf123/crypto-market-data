@@ -49,8 +49,10 @@ jobs:
             age=999999
           fi
 
-          if (( age <= 600 )); then
-            echo "Latest successful collection is ${age}s old (limit 600s); no dispatch needed."
+          # Workflow completion follows artifact creation by a few seconds;
+          # use 570s so the artifact itself stays inside the 600s policy.
+          if (( age <= 570 )); then
+            echo "Latest successful collection is ${age}s old (570s safety threshold); no dispatch needed."
             exit 0
           fi
 
