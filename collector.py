@@ -199,6 +199,7 @@ def fetch_klines(symbol, interval, limit=500):
             if len(candles)<minimum: raise ValueError("only "+str(len(candles))+" closed candles; minimum "+str(minimum))
             return {"exchange":name,"source_status":"ok","interval":interval,"requested":limit,
              "received_closed":len(candles),"last_closed_utc":datetime.fromtimestamp(candles[-1]["close_time"]/1000,timezone.utc).isoformat(),
+             "retrieved_at":datetime.now(timezone.utc).isoformat(),
              "provider_attempts":attempts,"candles":candles}
         except Exception as e:
             attempts.append({"exchange":name,"error":str(e)})
