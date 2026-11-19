@@ -165,6 +165,8 @@ def validate(data, now=None):
             available = isinstance(value.get("value"), (int,float)) and math.isfinite(value.get("value", float("nan")))
             retrieved_at = value.get("observed_at")
             retrieval_age = (now - parse_dt(retrieved_at)).total_seconds() if retrieved_at else None
+            if available and retrieval_age is None:
+                raise ValueError(f"{symbol}/{metric}: available derivative metric missing retrieval timestamp")
             if retrieval_age is not None and (retrieval_age < -60 or retrieval_age > MAX_CONTEXT_RETRIEVAL_AGE):
                 raise ValueError(f"{symbol}/{metric}: context retrieval timestamp is stale or future-dated ({retrieval_age:.0f}s)")
             metrics[metric] = {"available": available,
