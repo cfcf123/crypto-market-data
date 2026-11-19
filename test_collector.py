@@ -114,3 +114,34 @@ class CollectionTimestampTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HttpRetryPolicyTests(unittest.TestCase):
+    def test_permanent_http_error_is_not_retried(self):
+        from unittest.mock import patch
+        import urllib.error
+        error = urllib.error.HTTPError("https://example.test", 451, "Unavailable", {}, None)
+        with patch("collector.urllib.request.urlopen", side_effect=error) as request:
+            with self.assertRaises(urllib.error.HTTPError):
+                collector.get_json("https://example.test")
+        request.assert_called_once()
+
+    def test_timeout_retries_only_once(self):
+        from unittest.mock import patch
+        with patch("collector.urllib.request.urlopen", side_effect=TimeoutError("slow")) as request, \
+             patch("collector.time.sleep") as sleep:
+            with self.assertRaises(TimeoutError):
+                collector.get_json("https://example.test")
+        self.assertEqual(request.call_count, 2)
+        sleep.assert_called_once_with(0.25)
+
+    def test_successful_json_is_returned_without_retry(self):
+        from unittest.mock import patch
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return False
+            def read(self): return b'{"ok":true}'
+        with patch("collector.urllib.request.urlopen", return_value=Response()) as request:
+            self.assertEqual(collector.get_json("https://example.test"), {"ok":True})
+        request.assert_called_once()
