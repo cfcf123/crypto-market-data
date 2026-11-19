@@ -106,6 +106,7 @@ class MarketDataValidationTests(unittest.TestCase):
 
     def test_kline_retrieval_timestamp_is_distinct_from_candle_close_time(self):
         d=sample()
+        d["symbols"]["BTCUSDT"]["timeframes"]["1d"]["candles"][-1]["close_time"] -= 15*60*1000
         out=validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
         daily=out["symbols"]["BTCUSDT"]["timeframes"]["1d"]
         self.assertGreater(daily["age_seconds"], 600)
