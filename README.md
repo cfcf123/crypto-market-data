@@ -13,14 +13,18 @@ Automated public-market collection for BTCUSDT and ETHUSDT.
 - `decision_engine.py` fuses monthly, weekly, daily, 12h, 4h, 1h and 15m evidence. It publishes long/short/neutral evidence weights, raises neutral weight when timeframe coverage is weak or signals conflict, and provides four conditional setups: breakout long, pullback long, rebound short and breakdown short. Pullback/rebound zones are shown only when correctly located below/above the Binance reference price; otherwise the setup is explicitly unavailable. All triggers require closed-candle confirmation. Funding and global long/short account ratio add only a small bounded contrarian context adjustment (maximum ±0.04); open interest is displayed as context but does not affect direction without a reliable time series. Weights are evidence tilt, not win probabilities. The quality report exposes per-symbol spot age, per-timeframe latest-close age and age limit, weekly/monthly close age, and collection duration.
 - `generated_at` and `collection_completed_at` are stamped only after all collection and calculations finish; `collection_started_at` records the start, so consumers can distinguish collection duration from snapshot age.
 
-## Schedule
-GitHub Actions runs daily at 00:25 and 12:25 UTC (08:25 and 20:25 Asia/Shanghai). Manual runs are available in Actions -> Collect crypto market data -> Run workflow. Pushes to main also trigger a validation/collection run.
+## Schedule and recovery
+- Primary collector: every 10 minutes at minutes 03, 13, 23, 33, 43 and 53 UTC.
+- Freshness watchdog: checks every 5 minutes at offset minutes and calls `workflow_dispatch` when the latest successful collection is older than 600 seconds. It avoids duplicate dispatches when a collection is already queued/running and cancels a collection stuck for more than 15 minutes.
+- Manual collection: Actions -> Collect crypto market data -> Run workflow.
+- Pushes to `main` also trigger collection and validation.
+- GitHub scheduled events are best-effort and may be delayed or dropped under platform load. The watchdog is a recovery layer, not a guarantee of exact start times.
 
 ## Output
-The workflow uploads output/market-data.json, output/data-quality.json and output/trade-analysis.json as artifacts for 7 days; it does not commit market snapshots into the repository.
+The collection workflow uploads `output/market-data.json`, `output/data-quality.json` and `output/trade-analysis.json` as artifacts for 7 days; it does not commit market snapshots into the repository.
 
 ## Run locally
-Requires Python 3.10+ and no third-party packages: python collector.py
+Requires Python 3.10+ and no third-party packages: `python collector.py`
 
 ## Safety and limitations
 - Public market-data endpoints only. No exchange login, API key, secret, withdrawal or trading permission is needed.

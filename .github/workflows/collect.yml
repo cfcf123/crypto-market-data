@@ -5,7 +5,8 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "*/10 * * * *"
+    # Shift away from minute 00 to reduce scheduler contention.
+    - cron: "3,13,23,33,43,53 * * * *"
 
 permissions:
   contents: read
