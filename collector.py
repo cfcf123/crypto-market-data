@@ -4,7 +4,10 @@ import json, os, time, urllib.request, urllib.parse
 from datetime import datetime, timezone
 from wyckoff import analyze as analyze_wyckoff
 
-TIMEOUT = 15
+TIMEOUT = 6
+MAX_HTTP_ATTEMPTS = 2
+RETRYABLE_HTTP_CODES = {408, 425, 500, 502, 503, 504}
+PERMANENT_PROVIDER_CODES = {400, 401, 403, 404, 405, 451, 429}
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 INTERVALS = ["1d", "12h", "4h", "1h", "15m", "5m", "1m"]
 KLINE_LIMITS = {"1d": 800}
@@ -14,18 +17,34 @@ PRICE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com",
 BYBIT_INTERVAL = {"1d":"D", "12h":"720", "4h":"240", "1h":"60", "15m":"15", "5m":"5", "1m":"1"}
 OKX_BAR = {"1d":"1D", "12h":"12H", "4h":"4H", "1h":"1H", "15m":"15m", "5m":"5m", "1m":"1m"}
 
-def get_json(url, retries=4):
-    last=None
-    for attempt in range(retries):
+def get_json(url, retries=MAX_HTTP_ATTEMPTS, timeout=TIMEOUT):
+    """Fast-fail permanent HTTP errors; retry only transient network/server errors once."""
+    last = None
+    attempts = max(1, min(int(retries), MAX_HTTP_ATTEMPTS))
+    for attempt in range(attempts):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent":"crypto-market-data/3.0 (+public-readonly-collector)","Accept":"application/json"})
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-                if r.status != 200: raise RuntimeError("HTTP "+str(r.status))
-                data=json.loads(r.read().decode("utf-8"))
-            return data
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent":"crypto-market-data/3.0 (+public-readonly-collector)","Accept":"application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                if r.status != 200:
+                    raise RuntimeError("HTTP " + str(r.status))
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            last = e
+            # 403/451/429 and other client errors will not improve by retrying
+            # the same endpoint. The caller can move to the next provider.
+            if e.code not in RETRYABLE_HTTP_CODES:
+                raise
+        except (TimeoutError, urllib.error.URLError, ConnectionError, json.JSONDecodeError) as e:
+            last = e
         except Exception as e:
-            last=e
-            if attempt < retries-1: time.sleep(1.0*(2**attempt))
+            last = e
+            # Unknown payload/programming errors should not incur retry delays.
+            raise
+        if attempt < attempts - 1:
+            time.sleep(0.25 * (attempt + 1))
     raise last
 
 def qs(params):
@@ -33,20 +52,26 @@ def qs(params):
 
 def validate_price_cross_exchange(symbol, primary_price):
     checks=[]
-    for name, url in [
+    from concurrent.futures import ThreadPoolExecutor
+    checks=[]
+    sources = [
         ("Bybit Linear","https://api.bybit.com/v5/market/tickers?category=linear&symbol="+symbol),
         ("OKX USDT Swap","https://www.okx.com/api/v5/market/ticker?instId="+("BTC-USDT-SWAP" if symbol=="BTCUSDT" else "ETH-USDT-SWAP"))
-    ]:
+    ]
+    def check(source):
+        name, url = source
         try:
-            d=get_json(url)
+            d=get_json(url, retries=1, timeout=3)
             if name=="Bybit Linear":
                 p=float(d["result"]["list"][0]["lastPrice"])
             else:
                 p=float(d["data"][0]["last"])
             diff=abs(p-primary_price)/primary_price
-            checks.append({"source":name,"price":p,"difference_pct":round(diff*100,5),"ok":diff<=0.01})
+            return {"source":name,"price":p,"difference_pct":round(diff*100,5),"ok":diff<=0.01}
         except Exception as e:
-            checks.append({"source":name,"error":str(e),"ok":False})
+            return {"source":name,"error":str(e),"ok":False}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        checks=list(pool.map(check, sources))
     return checks
 
 def fetch_price(symbol):
@@ -65,6 +90,8 @@ def fetch_price(symbol):
                     "attempts":errors,"cross_exchange":validate_price_cross_exchange(symbol,p)}
         except Exception as e:
             errors.append({"source":"Binance Spot: "+host,"error":str(e)})
+            if getattr(e, "code", None) in PERMANENT_PROVIDER_CODES:
+                break
     return {"error":"Binance Spot official endpoints unavailable; no alternate-exchange price substituted",
             "source_status":"unavailable","price_authority":"BINANCE_REQUIRED",
             "attempts":errors,"failed_at":datetime.now(timezone.utc).isoformat()}
@@ -105,6 +132,8 @@ def fetch_binance_klines(symbol, interval, limit=500):
             return candles
         except Exception as e:
             errors.append(host+":"+str(e))
+            if getattr(e, "code", None) in PERMANENT_PROVIDER_CODES:
+                break
     raise RuntimeError("Binance futures kline hosts failed: "+" | ".join(errors))
 
 def binance_fapi_get(path, params):
@@ -114,6 +143,8 @@ def binance_fapi_get(path, params):
             return get_json(host + path + "?" + qs(params))
         except Exception as e:
             errors.append(host + ":" + str(e))
+            if getattr(e, "code", None) in PERMANENT_PROVIDER_CODES:
+                break
     raise RuntimeError("Binance Futures context hosts failed: " + " | ".join(errors))
 
 def fetch_binance_global_long_short_ratio(symbol):
@@ -133,6 +164,8 @@ def fetch_binance_spot_klines(symbol, interval, limit=500):
             return normalize(rows,"Binance Spot (technical fallback)",interval,int(time.time()*1000))
         except Exception as e:
             errors.append(host+":"+str(e))
+            if getattr(e, "code", None) in PERMANENT_PROVIDER_CODES:
+                break
     raise RuntimeError("Binance spot fallback failed: "+" | ".join(errors))
 
 def fetch_bybit_klines(symbol, interval, limit=500):
@@ -187,23 +220,27 @@ def fetch_okx_klines(symbol, interval, limit=300):
     return [unique[key] for key in sorted(unique)][-limit:]
 
 def fetch_klines(symbol, interval, limit=500):
+    started = time.monotonic()
     attempts=[]
     providers=[("Binance USD-M Futures",fetch_binance_klines),
                ("Bybit V5 Linear",fetch_bybit_klines),
                ("OKX USDT Swap",fetch_okx_klines),
                ("Binance Spot (technical fallback)",fetch_binance_spot_klines)]
     for name,fn in providers:
+        provider_started = time.monotonic()
         try:
             candles=fn(symbol,interval,limit)
             minimum=200 if interval in ("1d","12h","4h","1h") else 100
             if len(candles)<minimum: raise ValueError("only "+str(len(candles))+" closed candles; minimum "+str(minimum))
+            attempts.append({"exchange":name,"status":"ok","duration_seconds":round(time.monotonic()-provider_started,3)})
             return {"exchange":name,"source_status":"ok","interval":interval,"requested":limit,
              "received_closed":len(candles),"last_closed_utc":datetime.fromtimestamp(candles[-1]["close_time"]/1000,timezone.utc).isoformat(),
              "retrieved_at":datetime.now(timezone.utc).isoformat(),
+             "collection_duration_seconds":round(time.monotonic()-started,3),
              "provider_attempts":attempts,"candles":candles}
         except Exception as e:
-            attempts.append({"exchange":name,"error":str(e)})
-    return {"error":"all kline providers failed","source_status":"unavailable","interval":interval,"attempts":attempts,"provider_count":len(providers),"failed_at":datetime.now(timezone.utc).isoformat()}
+            attempts.append({"exchange":name,"error":str(e),"duration_seconds":round(time.monotonic()-provider_started,3)})
+    return {"error":"all kline providers failed","source_status":"unavailable","interval":interval,"attempts":attempts,"provider_count":len(providers),"collection_duration_seconds":round(time.monotonic()-started,3),"failed_at":datetime.now(timezone.utc).isoformat()}
 
 def ema(values, period):
     if len(values)<period:return None
@@ -441,13 +478,14 @@ def mark_collection_complete(result, completed_at=None):
 
 
 def main():
-    result={"collection_started_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.7","indicator_schema_version":"1.0",
+    result={"collection_started_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.8","indicator_schema_version":"1.0",
+     "collection_policy":{"http_timeout_seconds":TIMEOUT,"max_http_attempts":MAX_HTTP_ATTEMPTS,"kline_workers_per_symbol":4,"retry_policy":"retry transient network/5xx once; fast-fail permanent 4xx and 429"},
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
     def collect_symbol(symbol):
         item={"spot_price":fetch_price(symbol),"futures_context":fetch_futures_context(symbol),"timeframes":{}}
-        with ThreadPoolExecutor(max_workers=len(INTERVALS)) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             jobs={pool.submit(fetch_klines,symbol,tf,KLINE_LIMITS.get(tf,500)):tf for tf in INTERVALS}
             for job in as_completed(jobs):
                 tf=jobs[job]
