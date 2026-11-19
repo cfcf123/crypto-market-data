@@ -4,7 +4,7 @@ import json, os, time, urllib.request, urllib.parse
 from datetime import datetime, timezone
 from wyckoff import analyze as analyze_wyckoff
 
-TIMEOUT = 12
+TIMEOUT = 15
 SYMBOLS = ["BTCUSDT", "ETHUSDT"]
 INTERVALS = ["1d", "12h", "4h", "1h", "15m", "5m", "1m"]
 KLINE_LIMITS = {"1d": 800}
@@ -14,7 +14,7 @@ PRICE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com",
 BYBIT_INTERVAL = {"1d":"D", "12h":"720", "4h":"240", "1h":"60", "15m":"15", "5m":"5", "1m":"1"}
 OKX_BAR = {"1d":"1D", "12h":"12H", "4h":"4H", "1h":"1H", "15m":"15m", "5m":"5m", "1m":"1m"}
 
-def get_json(url, retries=3):
+def get_json(url, retries=4):
     last=None
     for attempt in range(retries):
         try:
@@ -25,7 +25,7 @@ def get_json(url, retries=3):
             return data
         except Exception as e:
             last=e
-            if attempt < retries-1: time.sleep(0.8*(2**attempt))
+            if attempt < retries-1: time.sleep(1.0*(2**attempt))
     raise last
 
 def qs(params):
@@ -50,32 +50,24 @@ def validate_price_cross_exchange(symbol, primary_price):
     return checks
 
 def fetch_price(symbol):
+    """Binance Spot is the sole authoritative spot-price source; other venues never replace it."""
     errors=[]
-    # Primary: Binance Spot, then independent exchange spot/linear tickers.
     for host in PRICE_HOSTS:
         try:
             d=get_json(host+"/api/v3/ticker/price?symbol="+symbol)
+            if not isinstance(d, dict) or d.get("symbol") != symbol:
+                raise ValueError("symbol mismatch or invalid Binance ticker payload")
             p=float(d["price"])
-            if d.get("symbol") != symbol or p <= 0: raise ValueError("symbol/price validation failed")
-            return {"price":p,"source":"Binance Spot: "+host,"source_status":"ok","price_authority":"BINANCE","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors,"cross_exchange":validate_price_cross_exchange(symbol,p)}
+            if not __import__("math").isfinite(p) or p <= 0:
+                raise ValueError("Binance price must be finite and positive")
+            return {"price":p,"source":"Binance Spot: "+host,"source_status":"ok",
+                    "price_authority":"BINANCE","observed_at":datetime.now(timezone.utc).isoformat(),
+                    "attempts":errors,"cross_exchange":validate_price_cross_exchange(symbol,p)}
         except Exception as e:
             errors.append({"source":"Binance Spot: "+host,"error":str(e)})
-    try:
-        d=get_json("https://api.bybit.com/v5/market/tickers?category=linear&symbol="+symbol)
-        p=float(d["result"]["list"][0]["lastPrice"])
-        if p <= 0: raise ValueError("invalid Bybit price")
-        return {"price":p,"source":"Bybit Linear","source_status":"fallback","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors}
-    except Exception as e:
-        errors.append({"source":"Bybit Linear","error":str(e)})
-    try:
-        inst="BTC-USDT-SWAP" if symbol=="BTCUSDT" else "ETH-USDT-SWAP"
-        d=get_json("https://www.okx.com/api/v5/market/ticker?instId="+inst)
-        p=float(d["data"][0]["last"])
-        if p <= 0: raise ValueError("invalid OKX price")
-        return {"price":p,"source":"OKX USDT Swap","source_status":"fallback","observed_at":datetime.now(timezone.utc).isoformat(),"attempts":errors}
-    except Exception as e:
-        errors.append({"source":"OKX USDT Swap","error":str(e)})
-    return {"error":"all spot/price providers failed","source_status":"unavailable","attempts":errors,"failed_at":datetime.now(timezone.utc).isoformat()}
+    return {"error":"Binance Spot official endpoints unavailable; no alternate-exchange price substituted",
+            "source_status":"unavailable","price_authority":"BINANCE_REQUIRED",
+            "attempts":errors,"failed_at":datetime.now(timezone.utc).isoformat()}
 
 def normalize(rows, source, interval, now_ms, bybit=False, okx=False):
     out=[]
