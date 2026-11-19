@@ -35,7 +35,7 @@ def sample():
         start = now_ms - duration*300
         candles = [{"open_time":start+i*duration,"close_time":start+(i+1)*duration-1,
                     "open":1.0,"high":2.0,"low":0.5,"close":1.5,"volume":10.0} for i in range(300)]
-        timeframes[tf] = {"source_status":"ok","exchange":"OKX USDT Swap","candles":candles}
+        timeframes[tf] = {"source_status":"ok","exchange":"OKX USDT Swap","retrieved_at":observed,"candles":candles}
     observed = generated.isoformat()
     return {"generated_at":observed,"symbols":{
       s: {"spot_price":{"price":100.0,"source":"Binance Spot: https://data-api.binance.vision","source_status":"ok","price_authority":"BINANCE","observed_at":observed},
@@ -60,10 +60,13 @@ class MarketDataValidationTests(unittest.TestCase):
         self.assertEqual(out["collection_duration_seconds"], 60.0)
         spot=out["symbols"]["BTCUSDT"]["spot"]["freshness"]
         self.assertEqual(spot["age_seconds"], 60)
-        self.assertEqual(spot["max_age_seconds"], 300)
+        self.assertEqual(spot["max_age_seconds"], 600)
         one_min=out["symbols"]["BTCUSDT"]["timeframes"]["1m"]
         self.assertEqual(one_min["status"], "fresh")
         self.assertEqual(one_min["max_age_seconds"], 600)
+        self.assertEqual(one_min["retrieval_age_seconds"], 60)
+        self.assertEqual(one_min["max_retrieval_age_seconds"], 600)
+        self.assertEqual(one_min["retrieval_freshness"], "fresh")
         self.assertIsNotNone(one_min["latest_closed_at"])
         week=out["symbols"]["BTCUSDT"]["higher_timeframes"]["1w"]
         self.assertEqual(week["status"], "fresh")
@@ -75,13 +78,39 @@ class MarketDataValidationTests(unittest.TestCase):
         oi=out["symbols"]["BTCUSDT"]["derivatives"]["open_interest"]
         self.assertEqual(oi["freshness"], "fresh")
         self.assertEqual(oi["retrieval_age_seconds"], 60)
-        self.assertEqual(oi["max_retrieval_age_seconds"], 300)
+        self.assertEqual(oi["max_retrieval_age_seconds"], 600)
 
     def test_stale_derivative_retrieval_fails(self):
         d=sample()
         d["symbols"]["BTCUSDT"]["futures_context"]["open_interest"]["observed_at"]="2026-11-18T06:50:00+00:00"
         with self.assertRaises(ValueError):
             validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+
+
+    def test_generated_dataset_older_than_ten_minutes_fails(self):
+        d=sample()
+        with self.assertRaises(ValueError):
+            validate(d, datetime(2026,11,18,7,11,1,tzinfo=timezone.utc))
+
+    def test_stale_kline_retrieval_fails_even_when_daily_candle_is_valid(self):
+        d=sample()
+        d["symbols"]["BTCUSDT"]["timeframes"]["1d"]["retrieved_at"]="2026-11-18T06:50:00+00:00"
+        with self.assertRaises(ValueError):
+            validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+
+    def test_missing_kline_retrieval_timestamp_fails(self):
+        d=sample()
+        del d["symbols"]["ETHUSDT"]["timeframes"]["12h"]["retrieved_at"]
+        with self.assertRaises(ValueError):
+            validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+
+    def test_kline_retrieval_timestamp_is_distinct_from_candle_close_time(self):
+        d=sample()
+        out=validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+        daily=out["symbols"]["BTCUSDT"]["timeframes"]["1d"]
+        self.assertGreater(daily["age_seconds"], 600)
+        self.assertEqual(daily["retrieval_age_seconds"], 60)
+        self.assertEqual(daily["retrieval_freshness"], "fresh")
 
     def test_missing_price_fails(self):
         d=sample(); d["symbols"]["ETHUSDT"]["spot_price"]["price"]=None
