@@ -113,6 +113,13 @@ class MarketDataValidationTests(unittest.TestCase):
         self.assertEqual(daily["retrieval_age_seconds"], 60)
         self.assertEqual(daily["retrieval_freshness"], "fresh")
 
+
+    def test_available_derivative_without_retrieval_timestamp_fails(self):
+        d=sample()
+        del d["symbols"]["ETHUSDT"]["futures_context"]["open_interest"]["observed_at"]
+        with self.assertRaises(ValueError):
+            validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+
     def test_missing_price_fails(self):
         d=sample(); d["symbols"]["ETHUSDT"]["spot_price"]["price"]=None
         with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
