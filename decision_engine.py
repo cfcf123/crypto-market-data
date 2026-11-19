@@ -23,6 +23,22 @@ def _clamp(value, low=-1.0, high=1.0):
     return max(low, min(high, value))
 
 
+
+def _risk_reward(entry, stop, tp1, tp2):
+    """Return approximate R multiples; zones use their midpoint as entry reference."""
+    risk = abs(float(entry) - float(stop))
+    if not _finite(risk) or risk <= 0:
+        return {"status": "unavailable", "reason": "entry and stop must define positive risk"}
+    return {
+        "status": "calculated",
+        "entry_reference": round(float(entry), 8),
+        "risk_per_unit": round(risk, 8),
+        "tp1_r": round(abs(float(tp1) - float(entry)) / risk, 3),
+        "tp2_r": round(abs(float(tp2) - float(entry)) / risk, 3),
+        "note": "conditional estimate; zone entries use zone midpoint; actual R depends on fill price and fees"
+    }
+
+
 def _timeframe_evidence(candles, metric):
     if not candles or not isinstance(metric, dict):
         return None
@@ -170,7 +186,9 @@ def _levels(item):
                 "stop_loss": round(ema20_level - 0.80 * atr, 8),
                 "take_profit_1": round(ema20_level + 1.50 * atr, 8),
                 "take_profit_2": round(ema20_level + 2.50 * atr, 8),
-                "condition": "回踩区域低于参考价；价格回踩该区域后，等待已收盘1h K线止跌确认才考虑，不接飞刀"
+                "condition": "回踩区域低于参考价；价格回踩该区域后，等待已收盘1h K线止跌确认才考虑，不接飞刀",
+                "risk_reward": _risk_reward((zone_low + zone_high) / 2, ema20_level - 0.80 * atr,
+                                            ema20_level + 1.50 * atr, ema20_level + 2.50 * atr)
             }
         else:
             retest_long = {
@@ -184,7 +202,9 @@ def _levels(item):
                 "stop_loss": round(ema20_level + 0.80 * atr, 8),
                 "take_profit_1": round(float(spot), 8),
                 "take_profit_2": round(swing_low, 8),
-                "condition": "反弹阻力区高于参考价；价格反弹进入该区域后，等待已收盘1h K线转弱/受阻确认才考虑"
+                "condition": "反弹阻力区高于参考价；价格反弹进入该区域后，等待已收盘1h K线转弱/受阻确认才考虑",
+                "risk_reward": _risk_reward((zone_low + zone_high) / 2, ema20_level + 0.80 * atr,
+                                            float(spot), swing_low)
             }
         else:
             rebound_short = {
@@ -207,6 +227,8 @@ def _levels(item):
             "stop_loss": round(long_trigger - 1.5 * atr, 8),
             "take_profit_1": round(long_trigger + 1.5 * atr, 8),
             "take_profit_2": round(long_trigger + 2.5 * atr, 8),
+            "risk_reward": _risk_reward(long_trigger, long_trigger - 1.5 * atr,
+                                        long_trigger + 1.5 * atr, long_trigger + 2.5 * atr),
             "condition": "仅在已收盘K线确认突破入场触发价后考虑；未触发不追单"
         },
         "pullback_long": retest_long,
@@ -215,6 +237,8 @@ def _levels(item):
             "stop_loss": round(short_trigger + 1.5 * atr, 8),
             "take_profit_1": round(short_trigger - 1.5 * atr, 8),
             "take_profit_2": round(short_trigger - 2.5 * atr, 8),
+            "risk_reward": _risk_reward(short_trigger, short_trigger + 1.5 * atr,
+                                        short_trigger - 1.5 * atr, short_trigger - 2.5 * atr),
             "condition": "仅在已收盘K线确认跌破入场触发价后考虑；未触发不追单"
         },
         "rebound_short": rebound_short
