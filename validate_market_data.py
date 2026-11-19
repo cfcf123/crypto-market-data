@@ -9,8 +9,9 @@ REPORT = Path("output/data-quality.json")
 SYMBOLS = ("BTCUSDT", "ETHUSDT")
 REQUIRED_TFS = ("1d", "12h", "4h", "1h", "15m", "5m", "1m")
 MAX_CANDLE_AGE = {"1m":600,"5m":1200,"15m":2700,"1h":10800,"4h":43200,"12h":129600,"1d":129600}
-MAX_SPOT_AGE = 300
-MAX_CONTEXT_RETRIEVAL_AGE = 300
+MAX_DATA_AGE_SECONDS = 600
+MAX_SPOT_AGE = MAX_DATA_AGE_SECONDS
+MAX_CONTEXT_RETRIEVAL_AGE = MAX_DATA_AGE_SECONDS
 
 def parse_dt(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -19,7 +20,7 @@ def validate(data, now=None):
     now = now or datetime.now(timezone.utc)
     generated = parse_dt(data["generated_at"])
     age = (now - generated).total_seconds()
-    if age < -60 or age > 900:
+    if age < -60 or age > MAX_DATA_AGE_SECONDS:
         raise ValueError(f"generated_at outside allowed freshness window: {age:.0f}s")
     started_value = data.get("collection_started_at")
     started_age = None
@@ -69,6 +70,12 @@ def validate(data, now=None):
             entry = tfs.get(tf, {})
             candles = entry.get("candles", [])
             good = entry.get("source_status") == "ok" and len(candles) >= (200 if tf in ("1d", "12h", "4h", "1h") else 100)
+            retrieval_value = entry.get("retrieved_at")
+            retrieval_age = (now - parse_dt(retrieval_value)).total_seconds() if retrieval_value else None
+            if good and retrieval_age is None:
+                raise ValueError(f"{symbol}/{tf}: missing data retrieval timestamp")
+            if good and (retrieval_age < -60 or retrieval_age > MAX_DATA_AGE_SECONDS):
+                raise ValueError(f"{symbol}/{tf}: data retrieval is stale or future-dated ({retrieval_age:.0f}s)")
             if good:
                 times = [c.get("open_time") for c in candles]
                 if times != sorted(times) or len(times) != len(set(times)):
@@ -92,7 +99,11 @@ def validate(data, now=None):
             usable[tf] = {"ok": bool(good), "status": "fresh" if good else "unavailable",
                           "source": entry.get("exchange"), "candles": len(candles),
                           "latest_closed_at": datetime.fromtimestamp(float(latest_close)/1000, timezone.utc).isoformat() if latest_close is not None else None,
-                          "age_seconds": latest_age, "max_age_seconds": MAX_CANDLE_AGE[tf]}
+                          "age_seconds": latest_age, "max_age_seconds": MAX_CANDLE_AGE[tf],
+                          "retrieved_at": retrieval_value,
+                          "retrieval_age_seconds": round(retrieval_age) if retrieval_age is not None else None,
+                          "max_retrieval_age_seconds": MAX_DATA_AGE_SECONDS,
+                          "retrieval_freshness": "fresh" if good and retrieval_age is not None else "unavailable"}
         count = sum(1 for v in usable.values() if v["ok"])
         if count < 3:
             raise ValueError(f"{symbol}: only {count} usable timeframes")
@@ -143,7 +154,9 @@ def validate(data, now=None):
             htf_age = round(now.timestamp() - float(bars[-1]["close_time"]) / 1000)
             higher_report[htf] = {"ok": True, "status": "fresh", "source": entry.get("source_exchange"),
                                   "candles": len(bars), "latest_closed_at": datetime.fromtimestamp(float(bars[-1]["close_time"])/1000, timezone.utc).isoformat(),
-                                  "age_seconds": htf_age}
+                                  "age_seconds": htf_age,
+                                  "source_data_retrieved_at": tfs.get("1d", {}).get("retrieved_at"),
+                                  "max_source_retrieval_age_seconds": MAX_DATA_AGE_SECONDS}
         ctx = item.get("futures_context", {})
         metrics = {}
         for metric in ("funding_rate", "open_interest", "global_long_short_ratio"):
