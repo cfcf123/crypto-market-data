@@ -72,9 +72,10 @@ def validate(data, now=None):
             good = entry.get("source_status") == "ok" and len(candles) >= (200 if tf in ("1d", "12h", "4h", "1h") else 100)
             retrieval_value = entry.get("retrieved_at")
             retrieval_age = (now - parse_dt(retrieval_value)).total_seconds() if retrieval_value else None
-            if good and retrieval_age is None:
+            has_source_data = entry.get("source_status") == "ok" and bool(candles)
+            if has_source_data and retrieval_age is None:
                 raise ValueError(f"{symbol}/{tf}: missing data retrieval timestamp")
-            if good and (retrieval_age < -60 or retrieval_age > MAX_DATA_AGE_SECONDS):
+            if has_source_data and (retrieval_age < -60 or retrieval_age > MAX_DATA_AGE_SECONDS):
                 raise ValueError(f"{symbol}/{tf}: data retrieval is stale or future-dated ({retrieval_age:.0f}s)")
             if good:
                 times = [c.get("open_time") for c in candles]
