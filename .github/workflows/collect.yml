@@ -4,9 +4,11 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  schedule:
-    # Shift away from minute 00 to reduce scheduler contention.
-    - cron: "3,13,23,33,43,53 * * * *"
+    paths:
+      - "manual-trigger.txt"
+      - "**.py"
+      - "requirements*.txt"
+      - ".github/workflows/collect.yml"
 
 permissions:
   contents: read
@@ -31,6 +33,9 @@ jobs:
           echo "run_number=${{ github.run_number }}" | tee -a trigger.txt
           echo "sha=${{ github.sha }}" | tee -a trigger.txt
           echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a trigger.txt
+          if [ -f manual-trigger.txt ]; then
+            echo "manual_trigger=$(cat manual-trigger.txt)" | tee -a trigger.txt
+          fi
       - name: Run unit tests (non-blocking for collection)
         id: tests
         continue-on-error: true
