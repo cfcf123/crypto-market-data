@@ -40,3 +40,14 @@ This document fixes the operational integration between ChatGPT and GitHub Actio
 - If the artifact cannot be downloaded/read or any integrity check fails, mark DATA_UNAVAILABLE and do not produce live price levels from stale data.
 - Do not send an email claiming a complete report unless the exact same validated report is also present in the chat.
 - Preserve all constraints in TASK_REPORT_OUTPUT_RULES.md, including 600-second maximum data age, Binance Spot reference-price authority when available, same-exchange candles per symbol, and all four left/right long/short strategies for BTC and ETH.
+
+
+## Permanent user preference: no scheduled collection
+The user explicitly requires that market data collection must NOT run every 10 minutes or on any other automatic schedule. Every report execution is initiated only by the user's explicit chat instruction. For each such instruction:
+- Generate a unique trigger marker in repository-root `manual-trigger.txt` and push it to `main`.
+- That push must trigger exactly one fresh collection run.
+- Wait for and verify the run and its matching artifact before analysis.
+- Never reuse a prior run's artifact, regardless of its age.
+- No cron, scheduled workflow, watchdog, stale-data auto-dispatch, or background refresh may be reintroduced unless the user explicitly changes this preference.
+- Do not use unrelated commits to trigger a run.
+- This preference applies across new chat windows and is recorded here as the repository's durable source of truth.
