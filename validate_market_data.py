@@ -64,6 +64,32 @@ def validate(data, now=None):
                 raise ValueError(f"{symbol}: spot price is stale or future-dated ({spot_age:.0f}s)")
             spot_freshness = {"age_seconds": round(spot_age), "max_age_seconds": MAX_SPOT_AGE,
                               "status": "fresh", "observed_at": spot.get("observed_at")}
+        # Only compare simultaneous live quotes; a candle close is never a ticker.
+        cross_reports = []
+        primary_stamp = spot.get("observed_at")
+        if price is not None and primary_stamp:
+            primary_dt = parse_dt(primary_stamp)
+            for venue in spot.get("cross_exchange", []) or []:
+                venue_price = venue.get("price")
+                if not isinstance(venue_price, (int, float)) or not math.isfinite(venue_price) or venue_price <= 0:
+                    continue
+                venue_stamp = venue.get("observed_at")
+                if not venue_stamp:
+                    raise ValueError(f"{symbol}: secondary live ticker missing observed_at timestamp")
+                venue_dt = parse_dt(venue_stamp)
+                venue_age = (now - venue_dt).total_seconds()
+                skew = abs((venue_dt - primary_dt).total_seconds())
+                if venue_age < -60 or venue_age > MAX_SPOT_AGE:
+                    raise ValueError(f"{symbol}: secondary live ticker stale/future-dated ({venue_age:.0f}s)")
+                difference = abs(float(venue_price) - float(price)) / float(price) * 100
+                cross_reports.append({"source":venue.get("source","unknown"),"price":float(venue_price),
+                                      "difference_pct":round(difference,5),"timestamp_skew_seconds":round(skew,3),
+                                      "freshness":"fresh" if skew <= 30 else "misaligned"})
+        cross_valid = [x for x in cross_reports if x["freshness"] == "fresh"]
+        cross_basis = {"status":"verified" if cross_valid and max(x["difference_pct"] for x in cross_valid) <= 0.5 else ("mismatch" if cross_valid else "unverified"),
+                       "execution_allowed":bool(cross_valid) and max(x["difference_pct"] for x in cross_valid) <= 0.5,
+                       "comparisons":cross_reports,"threshold_pct":0.5,"max_timestamp_skew_seconds":30}
+
         tfs = item.get("timeframes", {})
         usable = {}
         for tf in REQUIRED_TFS:
@@ -177,7 +203,7 @@ def validate(data, now=None):
                                "max_retrieval_age_seconds": MAX_CONTEXT_RETRIEVAL_AGE,
                                "freshness": "fresh" if available and retrieval_age is not None else ("timestamp_missing" if available else "unavailable")}
         report["symbols"][symbol] = {
-            "spot": {"price": price, "source": spot.get("source"), "authority": authority or "NON_BINANCE_FALLBACK", "status": spot.get("source_status"), "freshness": spot_freshness},
+            "spot": {"price": price, "source": spot.get("source"), "authority": authority or "NON_BINANCE_FALLBACK", "status": spot.get("source_status"), "freshness": spot_freshness, "cross_exchange_basis": cross_basis if price is not None else {"status":"unverified","execution_allowed":False,"comparisons":[]}},
             "timeframes": usable, "usable_timeframes": count, "higher_timeframes": higher_report, "derivatives": metrics
         }
     return report
