@@ -13,7 +13,7 @@ This document fixes the operational integration between ChatGPT and GitHub Actio
 2. Every explicit user request to execute a report (including “执行一次任务” and “严格执行一次任务”) MUST start one fresh collection through a new push to main. Do not reuse a previous successful run, even if its data is less than 600 seconds old.
 3. Trigger the run by creating or updating the repository-root file manual-trigger.txt. Its content must be unique for every request and include a UTC timestamp plus a short execution identifier. The collector workflow listens for pushes to this file.
 4. Wait for the workflow run caused by that exact push. Match its head_sha to the trigger commit, then verify run status and conclusion. Do not select an unrelated run.
-5. Do not use workflow_dispatch or any watchdog as a substitute for the per-request push.
+5. The collection workflow has no workflow_dispatch trigger; a push to main is the only supported trigger.
 6. Do not make unrelated documentation-only commits as a substitute for a user-triggered run. Use manual-trigger.txt for each requested execution.
 
 ## Correct way to inspect Actions from ChatGPT
@@ -30,6 +30,7 @@ This document fixes the operational integration between ChatGPT and GitHub Actio
 
 ## Workflow trigger scope
 - collect.yml triggers on push to main only when manual-trigger.txt, Python source, requirements files, or collect.yml changes.
+- Push is the only collection trigger; workflow_dispatch is disabled.
 - There is no cron schedule in collect.yml.
 - The scheduled watchdog workflow has been removed; no background workflow may automatically dispatch collection.
 - Ordinary documentation edits do not trigger collection.
