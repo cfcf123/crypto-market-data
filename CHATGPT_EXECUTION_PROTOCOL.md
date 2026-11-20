@@ -8,12 +8,12 @@ This document fixes the operational integration between ChatGPT and GitHub Actio
 - Artifact naming: market-data-<run_number>
 - Required artifact files: output/market-data.json, output/data-quality.json, output/trade-analysis.json, trigger.txt, test-status.txt
 
-## Trigger policy: on-demand only
-1. Scheduled cron collection is disabled. Do not re-enable a schedule unless the user explicitly asks for it.
+## Trigger policy: user-command-only
+1. All cron/scheduled collection and watchdog auto-dispatch mechanisms are disabled. Do not re-enable them unless the user explicitly asks.
 2. Every explicit user request to execute a report (including “执行一次任务” and “严格执行一次任务”) MUST start one fresh collection through a new push to main. Do not reuse a previous successful run, even if its data is less than 600 seconds old.
-3. Trigger the run by creating or updating the repository-root file manual-trigger.txt. Its content must be unique for every request and include a UTC timestamp plus a short execution identifier. The workflow listens for pushes to this file.
-4. Wait for the workflow run caused by that exact push. Match its head_sha to the trigger commit, then verify run status and conclusion. Do not select an unrelated, newer scheduled or push run.
-5. A workflow_dispatch run is an optional manual fallback only if actually invoked through a supported action or GitHub UI; never claim it was dispatched if it was not.
+3. Trigger the run by creating or updating the repository-root file manual-trigger.txt. Its content must be unique for every request and include a UTC timestamp plus a short execution identifier. The collector workflow listens for pushes to this file.
+4. Wait for the workflow run caused by that exact push. Match its head_sha to the trigger commit, then verify run status and conclusion. Do not select an unrelated run.
+5. Do not use workflow_dispatch or any watchdog as a substitute for the per-request push.
 6. Do not make unrelated documentation-only commits as a substitute for a user-triggered run. Use manual-trigger.txt for each requested execution.
 
 ## Correct way to inspect Actions from ChatGPT
@@ -29,9 +29,10 @@ This document fixes the operational integration between ChatGPT and GitHub Actio
 9. Record run id, run number, head SHA, artifact id/digest, generated_at, data age, and workflow conclusion in the report.
 
 ## Workflow trigger scope
-- The collect workflow runs on push to main only when manual-trigger.txt, Python source, requirements files, or the workflow file changes.
-- It also retains workflow_dispatch for explicit manual use.
-- There is no cron schedule. Ordinary documentation edits do not trigger collection.
+- collect.yml triggers on push to main only when manual-trigger.txt, Python source, requirements files, or collect.yml changes.
+- There is no cron schedule in collect.yml.
+- The scheduled watchdog workflow has been removed; no background workflow may automatically dispatch collection.
+- Ordinary documentation edits do not trigger collection.
 
 ## Hard failure rules
 - A run's success is not enough: artifact, SHA, run number, timestamps, quality report, and trade-analysis must all match.
