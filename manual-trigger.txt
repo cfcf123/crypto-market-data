@@ -1,4 +1,4 @@
-request_id=manual-report-20261120T234600Z
-requested_at_utc=2026-11-20T23:46:00Z
-requested_at_asia_singapore=2026-11-21T07:46:00+08:00
+request_id=manual-report-20261120T234923Z-dqif5j
+requested_at_utc=2026-11-20T23:49:23.161Z
 trigger=user-explicit-strict-task-request
+collection_policy=push-only-fresh-run-no-reuse
