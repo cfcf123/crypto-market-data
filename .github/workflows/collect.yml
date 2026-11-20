@@ -1,7 +1,6 @@
 name: Collect crypto market data
 
 on:
-  workflow_dispatch:
   push:
     branches: [main]
     paths:
