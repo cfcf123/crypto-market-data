@@ -1,4 +1,4 @@
-request_id=manual-report-20261120T040500Z
-requested_at_utc=2026-11-20T04:05:00Z
-requested_at_asia_singapore=2026-11-20T12:05:00+08:00
+request_id=manual-report-20261121T061800Z
+requested_at_utc=2026-11-21T06:18:00Z
+requested_at_asia_singapore=2026-11-21T14:18:00+08:00
 trigger=manual-or-scheduled-report-request
