@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from decision_engine import analyze_symbol, analyze_dataset
 
 
@@ -76,8 +77,9 @@ class DecisionEngineTests(unittest.TestCase):
 
     def test_old_candle_close_is_not_used_as_live_exchange_basis(self):
         item = make_item("bull")
-        item["spot_price"].update({"observed_at":"2026-11-20T23:49:33+00:00",
-            "cross_exchange":[{"source":"OKX USDT Swap","price":100.1,"observed_at":"2026-11-20T23:49:34+00:00"}]})
+        stamp = datetime.now(timezone.utc).isoformat()
+        item["spot_price"].update({"observed_at":stamp,
+            "cross_exchange":[{"source":"OKX USDT Swap","price":100.1,"observed_at":stamp}]})
         levels = analyze_symbol(item)["levels"]
         self.assertEqual(levels["source_last_close"], 110.0)
         self.assertAlmostEqual(levels["reference_basis_difference_pct"], 0.1, places=3)
@@ -88,8 +90,9 @@ class DecisionEngineTests(unittest.TestCase):
 
     def test_same_time_live_basis_over_half_percent_pauses_execution(self):
         item = make_item("bull")
-        item["spot_price"].update({"observed_at":"2026-11-20T23:49:33+00:00",
-            "cross_exchange":[{"source":"OKX USDT Swap","price":100.6,"observed_at":"2026-11-20T23:49:34+00:00"}]})
+        stamp = datetime.now(timezone.utc).isoformat()
+        item["spot_price"].update({"observed_at":stamp,
+            "cross_exchange":[{"source":"OKX USDT Swap","price":100.6,"observed_at":stamp}]})
         levels = analyze_symbol(item)["levels"]
         self.assertFalse(levels["execution_allowed"])
         self.assertEqual(levels["execution_status"], "paused_basis_mismatch")
@@ -98,7 +101,8 @@ class DecisionEngineTests(unittest.TestCase):
 
     def test_missing_live_ticker_timestamp_pauses_as_unverified(self):
         item = make_item("bull")
-        item["spot_price"].update({"observed_at":"2026-11-20T23:49:33+00:00",
+        stamp = datetime.now(timezone.utc).isoformat()
+        item["spot_price"].update({"observed_at":stamp,
             "cross_exchange":[{"source":"OKX USDT Swap","price":100.1}]})
         levels = analyze_symbol(item)["levels"]
         self.assertFalse(levels["execution_allowed"])
