@@ -52,7 +52,10 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertLess(sparse["available_weight_pct"], full["available_weight_pct"])
 
     def test_conditional_levels_are_ordered_and_marked(self):
-        result = analyze_symbol(make_item("bull"))
+        item = make_item("bull")
+        item["timeframes"]["4h"]["indicators"] = dict(item["timeframes"]["4h"]["indicators"])
+        item["timeframes"]["4h"]["indicators"]["ema20"] = 95.0
+        result = analyze_symbol(item)
         levels = result["levels"]
         self.assertEqual(levels["status"], "conditional")
         self.assertGreater(levels["long"]["entry_trigger"], levels["reference_price"])
@@ -68,7 +71,10 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertIn("回踩", levels["pullback_long"]["condition"])
 
     def test_bearish_structure_only_offers_rebound_short_not_pullback_long(self):
-        levels = analyze_symbol(make_item("bear"))["levels"]
+        item = make_item("bear")
+        item["timeframes"]["4h"]["indicators"] = dict(item["timeframes"]["4h"]["indicators"])
+        item["timeframes"]["4h"]["indicators"]["ema20"] = 105.0
+        levels = analyze_symbol(item)["levels"]
         self.assertEqual(levels["pullback_long"]["status"], "unavailable")
         self.assertEqual(levels["rebound_short"]["status"], "conditional")
         self.assertGreater(levels["rebound_short"]["entry_zone"][0], levels["reference_price"])
