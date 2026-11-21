@@ -1,4 +1,4 @@
-request_id=manual-report-basisfix-20261121T000119Z-tryjh
-requested_at_utc=2026-11-21T00:01:19.437Z
-trigger=user-explicit-strict-task-request-with-basis-fix-validation
+request_id=manual-report-basisfix-retest-20261121T000349Z-z6xjz
+requested_at_utc=2026-11-21T00:03:49.156Z
+trigger=user-explicit-strict-task-request-after-regression-fix
 collection_policy=push-only-fresh-run-no-reuse
