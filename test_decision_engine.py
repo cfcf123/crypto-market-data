@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timezone
 from decision_engine import analyze_symbol, analyze_dataset
 
 
@@ -74,14 +75,38 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertGreater(levels["rebound_short"]["stop_loss"], levels["rebound_short"]["entry_zone"][1])
         self.assertIn("反弹", levels["rebound_short"]["condition"])
 
-    def test_levels_scale_candle_structure_to_reference_price_basis(self):
-        result = analyze_symbol(make_item("bull"))
-        levels = result["levels"]
-        self.assertEqual(levels["reference_price"], 100.0)
+    def test_old_candle_close_is_not_used_as_live_exchange_basis(self):
+        item = make_item("bull")
+        stamp = datetime.now(timezone.utc).isoformat()
+        item["spot_price"].update({"observed_at":stamp,
+            "cross_exchange":[{"source":"OKX USDT Swap","price":100.1,"observed_at":stamp}]})
+        levels = analyze_symbol(item)["levels"]
         self.assertEqual(levels["source_last_close"], 110.0)
-        self.assertAlmostEqual(levels["reference_basis_difference_pct"], 9.0909, places=3)
+        self.assertAlmostEqual(levels["reference_basis_difference_pct"], 0.1, places=3)
+        self.assertTrue(levels["execution_allowed"])
+        self.assertEqual(levels["execution_status"], "allowed")
+        self.assertIsNone(levels["basis_warning"])
+        self.assertAlmostEqual(levels["atr14"], 2.0)
+
+    def test_same_time_live_basis_over_half_percent_pauses_execution(self):
+        item = make_item("bull")
+        stamp = datetime.now(timezone.utc).isoformat()
+        item["spot_price"].update({"observed_at":stamp,
+            "cross_exchange":[{"source":"OKX USDT Swap","price":100.6,"observed_at":stamp}]})
+        levels = analyze_symbol(item)["levels"]
+        self.assertFalse(levels["execution_allowed"])
+        self.assertEqual(levels["execution_status"], "paused_basis_mismatch")
+        self.assertGreater(levels["reference_basis_difference_pct"], 0.5)
         self.assertIsNotNone(levels["basis_warning"])
-        self.assertGreater(levels["long"]["entry_trigger"], levels["reference_price"])
+
+    def test_missing_live_ticker_timestamp_pauses_as_unverified(self):
+        item = make_item("bull")
+        stamp = datetime.now(timezone.utc).isoformat()
+        item["spot_price"].update({"observed_at":stamp,
+            "cross_exchange":[{"source":"OKX USDT Swap","price":100.1}]})
+        levels = analyze_symbol(item)["levels"]
+        self.assertFalse(levels["execution_allowed"])
+        self.assertEqual(levels["execution_status"], "paused_basis_unverified")
 
     def test_derivatives_crowded_longs_add_only_small_bearish_tilt(self):
         item = make_item("bull")

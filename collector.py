@@ -67,7 +67,7 @@ def validate_price_cross_exchange(symbol, primary_price):
             else:
                 p=float(d["data"][0]["last"])
             diff=abs(p-primary_price)/primary_price
-            return {"source":name,"price":p,"difference_pct":round(diff*100,5),"ok":diff<=0.01}
+            return {"source":name,"price":p,"difference_pct":round(diff*100,5),"observed_at":datetime.now(timezone.utc).isoformat(),"ok":diff<=0.01}
         except Exception as e:
             return {"source":name,"error":str(e),"ok":False}
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -85,9 +85,11 @@ def fetch_price(symbol):
             p=float(d["price"])
             if not __import__("math").isfinite(p) or p <= 0:
                 raise ValueError("Binance price must be finite and positive")
+            observed_at = datetime.now(timezone.utc).isoformat()
+            cross_exchange = validate_price_cross_exchange(symbol,p)
             return {"price":p,"source":"Binance Spot: "+host,"source_status":"ok",
-                    "price_authority":"BINANCE","observed_at":datetime.now(timezone.utc).isoformat(),
-                    "attempts":errors,"cross_exchange":validate_price_cross_exchange(symbol,p)}
+                    "price_authority":"BINANCE","observed_at":observed_at,
+                    "attempts":errors,"cross_exchange":cross_exchange}
         except Exception as e:
             errors.append({"source":"Binance Spot: "+host,"error":str(e)})
             if getattr(e, "code", None) in PERMANENT_PROVIDER_CODES:

@@ -38,7 +38,7 @@ def sample():
                     "open":1.0,"high":2.0,"low":0.5,"close":1.5,"volume":10.0} for i in range(300)]
         timeframes[tf] = {"source_status":"ok","exchange":"OKX USDT Swap","retrieved_at":observed,"candles":candles}
     return {"generated_at":observed,"symbols":{
-      s: {"spot_price":{"price":100.0,"source":"Binance Spot: https://data-api.binance.vision","source_status":"ok","price_authority":"BINANCE","observed_at":observed},
+      s: {"spot_price":{"price":100.0,"source":"Binance Spot: https://data-api.binance.vision","source_status":"ok","price_authority":"BINANCE","observed_at":observed,"cross_exchange":[{"source":"OKX USDT Swap","price":100.1,"observed_at":observed}]},
           "timeframes":timeframes,
           "higher_timeframes":{"1w":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1w"),"wyckoff":{"status":"ok"}},
                                "1M":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1M"),"wyckoff":{"status":"ok"}}},
@@ -46,6 +46,28 @@ def sample():
       for s in ("BTCUSDT","ETHUSDT")}}
 
 class MarketDataValidationTests(unittest.TestCase):
+    def test_cross_exchange_live_ticker_basis_is_reported(self):
+        d=sample()
+        out=validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+        basis=out["symbols"]["BTCUSDT"]["spot"]["cross_exchange_basis"]
+        self.assertEqual(basis["status"], "verified")
+        self.assertTrue(basis["execution_allowed"])
+        self.assertAlmostEqual(basis["comparisons"][0]["difference_pct"], 0.1, places=3)
+
+    def test_cross_exchange_live_ticker_without_timestamp_fails(self):
+        d=sample()
+        d["symbols"]["BTCUSDT"]["spot_price"]["cross_exchange"][0].pop("observed_at")
+        with self.assertRaises(ValueError):
+            validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+
+    def test_cross_exchange_ticker_timestamp_misalignment_is_not_verified(self):
+        d=sample()
+        d["symbols"]["BTCUSDT"]["spot_price"]["cross_exchange"][0]["observed_at"]="2026-11-18T06:59:00+00:00"
+        out=validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+        basis=out["symbols"]["BTCUSDT"]["spot"]["cross_exchange_basis"]
+        self.assertEqual(basis["status"], "unverified")
+        self.assertFalse(basis["execution_allowed"])
+
     def test_valid_data_allows_optional_derivatives_missing(self):
         d=sample()
         out=validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))

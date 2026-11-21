@@ -23,6 +23,36 @@ def _clamp(value, low=-1.0, high=1.0):
     return max(low, min(high, value))
 
 
+def _realtime_basis_check(spot_block, max_skew_seconds=30, threshold_pct=0.5):
+    """Compare Binance Spot with same-time live venue tickers, never candle closes."""
+    from datetime import datetime, timezone
+    primary, stamp = spot_block.get("price"), spot_block.get("observed_at")
+    if not _finite(primary) or primary <= 0 or not stamp:
+        return {"status":"unverified","execution_allowed":False,"reason":"Binance reference price/timestamp unavailable","comparisons":[],"threshold_pct":threshold_pct}
+    try:
+        primary_dt = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        if primary_dt.tzinfo is None: raise ValueError("timezone missing")
+    except Exception:
+        return {"status":"unverified","execution_allowed":False,"reason":"Binance reference timestamp invalid","comparisons":[],"threshold_pct":threshold_pct}
+    comparisons=[]
+    for venue in spot_block.get("cross_exchange", []) or []:
+        price, venue_stamp = venue.get("price"), venue.get("observed_at")
+        if not _finite(price) or price <= 0 or not venue_stamp: continue
+        try:
+            venue_dt=datetime.fromisoformat(str(venue_stamp).replace("Z", "+00:00"))
+            if venue_dt.tzinfo is None: continue
+            skew=abs((venue_dt-primary_dt).total_seconds())
+            age=abs((datetime.now(timezone.utc)-venue_dt).total_seconds())
+        except Exception: continue
+        if skew > max_skew_seconds or age > 600: continue
+        diff=abs(float(price)-float(primary))/float(primary)*100
+        comparisons.append({"source":venue.get("source","unknown"),"price":float(price),"difference_pct":round(diff,5),"timestamp_skew_seconds":round(skew,3),"observed_at":venue_stamp})
+    if not comparisons:
+        return {"status":"unverified","execution_allowed":False,"reason":"No fresh secondary-exchange ticker within timestamp alignment window","comparisons":[],"threshold_pct":threshold_pct,"max_timestamp_skew_seconds":max_skew_seconds}
+    maximum=max(x["difference_pct"] for x in comparisons)
+    allowed=maximum <= threshold_pct
+    return {"status":"verified" if allowed else "mismatch","execution_allowed":allowed,"reason":None if allowed else "Same-time live exchange price difference exceeds threshold","max_difference_pct":round(maximum,5),"comparisons":comparisons,"threshold_pct":threshold_pct,"max_timestamp_skew_seconds":max_skew_seconds}
+
 
 def _risk_reward(entry, stop, tp1, tp2):
     """Return approximate R multiples; zones use their midpoint as entry reference."""
@@ -162,16 +192,14 @@ def _levels(item):
             swing_high_raw = max(float(x["high"]) for x in candles[-20:])
             swing_low_raw = min(float(x["low"]) for x in candles[-20:])
         candle_close = float(candles[-1]["close"])
-        # Align OHLCV-derived levels to the authoritative reference-price basis
-        # (normally Binance Spot) without mixing candle series from exchanges.
-        basis_ratio = float(spot) / candle_close if candle_close > 0 else 1.0
-        basis_diff_pct = abs(float(spot) - candle_close) / candle_close * 100 if candle_close > 0 else None
-        atr = atr_raw * basis_ratio
+        # Candle structure remains in its native exchange scale. A prior candle
+        # close is not a contemporaneous quote and must never be used as basis.
+        atr = atr_raw
         ema20_raw = metric.get("ema20")
-        ema20_level = float(ema20_raw) * basis_ratio if _finite(ema20_raw) else None
-        swing_high = float(swing_high_raw) * basis_ratio
-        swing_low = float(swing_low_raw) * basis_ratio
-        level_basis = "closed " + source_tf + " candles; 20-bar swing and ATR14; levels scaled to reference-price basis"
+        ema20_level = float(ema20_raw) if _finite(ema20_raw) else None
+        swing_high = float(swing_high_raw)
+        swing_low = float(swing_low_raw)
+        level_basis = "closed " + source_tf + " candles; native candle-source scale; no stale-close basis scaling"
     long_trigger = max(float(spot), float(swing_high)) + 0.10 * atr
     short_trigger = min(float(spot), float(swing_low)) - 0.10 * atr
     retest_long = {"status": "unavailable", "reason": "缺少有效EMA20/ATR数据，不能计算回踩区域"}
@@ -211,8 +239,20 @@ def _levels(item):
                 "status": "unavailable",
                 "reason": "EMA20阻力区未处于参考价上方；当前不构成反弹做空位置，需价格结构改变后重新评估"
             }
+    basis_check = _realtime_basis_check(spot_block)
+    if basis_check["status"] == "mismatch":
+        basis_warning = "同一时刻交易所实时价格差异超过0.5%，已暂停实盘执行建议"
+    elif basis_check["status"] == "unverified":
+        basis_warning = "缺少时间对齐的有效跨交易所实时价格，基差未验证，已暂停实盘执行建议"
+    else:
+        basis_warning = None
     return {
         "status": "conditional",
+        "execution_allowed": basis_check["execution_allowed"],
+        "execution_status": "allowed" if basis_check["execution_allowed"] else ("paused_basis_mismatch" if basis_check["status"] == "mismatch" else "paused_basis_unverified"),
+        "basis_check": basis_check,
+        "reference_basis_difference_pct": basis_check.get("max_difference_pct"),
+        "basis_warning": basis_warning,
         "reference_price": float(spot),
         "reference_source": spot_block.get("source", "unknown"),
         "source_timeframe": source_tf,
@@ -220,8 +260,6 @@ def _levels(item):
         "atr14": round(atr, 8),
         "source_exchange": item.get("timeframes", {}).get(source_tf, {}).get("exchange") if source_tf != "spot_estimate" else None,
         "source_last_close": round(candle_close, 8) if metric is not None else None,
-        "reference_basis_difference_pct": round(basis_diff_pct, 4) if metric is not None else None,
-        "basis_warning": "参考价与K线源收盘价基差超过0.5%，点位已按参考价比例校准，执行前需复核" if metric is not None and basis_diff_pct > 0.5 else None,
         "long": {
             "entry_trigger": round(long_trigger, 8),
             "stop_loss": round(long_trigger - 1.5 * atr, 8),
