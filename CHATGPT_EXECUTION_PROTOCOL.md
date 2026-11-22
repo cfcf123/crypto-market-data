@@ -39,7 +39,7 @@ This document fixes the operational integration between ChatGPT and GitHub Actio
 - A run's success is not enough: artifact, SHA, run number, timestamps, quality report, and trade-analysis must all match.
 - If the artifact cannot be downloaded/read or any integrity check fails, mark DATA_UNAVAILABLE and do not produce live price levels from stale data.
 - Do not send an email claiming a complete report unless the exact same validated report is also present in the chat.
-- Preserve all constraints in TASK_REPORT_OUTPUT_RULES.md, including 600-second maximum data age, Binance Spot reference-price authority when available, same-exchange candles per symbol, and all four left/right long/short strategies for BTC and ETH. Do not block report generation solely on a post-download 600-second age calculation; every user request must trigger a new push and use only that push's artifact.
+- Preserve all constraints in TASK_REPORT_OUTPUT_RULES.md, including Binance Spot reference-price authority when available, same-exchange candles per symbol, and all four left/right long/short strategies for BTC and ETH. Do not apply a separate post-download data-age/freshness threshold; every user request must trigger a new push and use only that push's artifact.
 
 
 ## Permanent user preference: no scheduled collection
