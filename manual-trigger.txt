@@ -1,6 +1,6 @@
-request_id=manual-report-20261122T125200Z
-requested_at_utc=2026-11-22T12:52:00Z
-requested_at_asia_singapore=2026-11-22T20:52:00+08:00
+request_id=manual-report-20261122T141500Z
+requested_at_utc=2026-11-22T14:15:00Z
+requested_at_asia_singapore=2026-11-22T22:15:00+08:00
 trigger=user-explicit-strict-task-request
 collection_policy=push-only-fresh-run-no-reuse
 max_data_age_seconds=600
