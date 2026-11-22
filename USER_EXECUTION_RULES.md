@@ -43,9 +43,9 @@
 ## Same-time cross-exchange basis validation (mandatory)
 - Never compare Binance Spot live price with a previous candle close to determine exchange basis. Candle close age is not a live quote timestamp.
 - Collector must timestamp every secondary live ticker independently (cross_exchange[].observed_at) and timestamp the Binance Spot reference (spot_price.observed_at).
-- Compare only valid positive live prices whose timestamps differ by no more than 30 seconds and whose retrieval age is no more than 600 seconds.
+- Compare only valid positive live prices whose timestamps differ by no more than 30 seconds .
 - Calculate basis as abs(secondary_live_price - Binance_spot_price) / Binance_spot_price * 100. A verified same-time difference above 0.5% sets execution_allowed=false and execution_status=paused_basis_mismatch.
-- If no secondary live quote passes timestamp/freshness checks, set execution_allowed=false and execution_status=paused_basis_unverified. Missing data must never be interpreted as zero basis.
+- If no secondary live quote passes timestamp-alignment checks, set execution_allowed=false and execution_status=paused_basis_unverified. Missing data must never be interpreted as zero basis.
 - Do not scale ATR, EMA, swing highs/lows, or other candle structure by the ratio between a live spot price and a stale candle close. Keep candle-derived levels in the source candle series native price scale.
 - Preserve conditional levels for observation, but clearly pause live execution when basis is mismatched or unverified. Automated tests must cover stale-close false positives, aligned live prices below/above threshold, and missing/misaligned timestamps.
 
