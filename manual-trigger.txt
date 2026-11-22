@@ -1,4 +1,7 @@
-request_id=manual-report-20261122T084000Z
-requested_at_utc=2026-11-22T08:40:00Z
+request_id=manual-report-20261122T111400Z
+requested_at_utc=2026-11-22T11:14:00Z
+requested_at_asia_singapore=2026-11-22T19:14:00+08:00
 trigger=user-explicit-strict-task-request
 collection_policy=push-only-fresh-run-no-reuse
+max_data_age_seconds=600
+closed_candles_only=true
