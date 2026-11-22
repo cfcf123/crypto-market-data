@@ -162,6 +162,37 @@ def _derivatives_adjustment(item):
     return _clamp(adjustment, -0.04, 0.04), details, notes
 
 
+
+def _left_side_setup(side, spot, atr, swing_high, swing_low, ema20, ema50, item):
+    """Structural left-side planner. EMA20/50 are scoring inputs, never vetoes."""
+    short = side == "short"
+    level = swing_high if short else swing_low
+    if not _finite(level) or (level <= spot + .25*atr if short else level >= spot - .25*atr):
+        return {"status":"unavailable","reason":("缺少高于现价至少0.25 ATR的有效结构压力/前高" if short else "缺少低于现价至少0.25 ATR的有效结构支撑/前低")+"，不能建立左侧预埋"}
+    distance = (level-spot)/atr if short else (spot-level)/atr
+    if distance > 8:
+        return {"status":"unavailable","reason":"有效结构位距离现价超过8 ATR，预埋距离过远"}
+    lo, hi = level-.15*atr, level+.15*atr
+    if (lo <= spot if short else hi >= spot):
+        return {"status":"unavailable","reason":"结构区域与现价重叠，缺少安全预埋空间"}
+    stop = level+(.8*atr if short else -.8*atr)
+    tp1 = spot
+    tp2 = (min(swing_low,tp1-.5*atr) if _finite(swing_low) else tp1-2*atr) if short else (max(swing_high,tp1+.5*atr) if _finite(swing_high) else tp1+2*atr)
+    if (tp2 >= tp1 if short else tp2 <= tp1): tp2 = tp1+(-2*atr if short else 2*atr)
+    aligned = ((spot < ema20 and ema20 < ema50) if short else (spot > ema20 and ema20 > ema50)) if _finite(ema20) and _finite(ema50) else False
+    vals=[_timeframe_evidence(item.get("timeframes",{}).get(tf,{}).get("candles",[]),item.get("timeframes",{}).get(tf,{}).get("indicators",{})) for tf in ("1d","12h","4h")]
+    vals=[v for v in vals if v is not None]
+    trend=sum(vals)/len(vals) if vals else 0.0
+    trend_score=max(0.0,min(100.0,50.0+(-35.0 if short else 35.0)*trend))
+    proximity=max(0.0,100.0-distance*10.0)
+    quality=round(.45*trend_score+.40*proximity+(10 if aligned else 0))
+    return {"status":"conditional","entry_zone":[round(lo,8),round(hi,8)],"stop_loss":round(stop,8),
+            "take_profit_1":round(tp1,8),"take_profit_2":round(tp2,8),
+            "risk_reward":_risk_reward((lo+hi)/2,stop,tp1,tp2),"setup_score":quality,
+            "quality_grade":"A" if quality>=75 else "B" if quality>=60 else "C",
+            "structure_basis":("近端前高/摆动高点结构压力" if short else "近端前低/摆动低点结构支撑")+"；EMA20/EMA50仅参与评分",
+            "condition":("反弹进入结构压力区后，等待已收盘1h K线受阻/转弱确认" if short else "回踩进入结构支撑区后，等待已收盘1h K线止跌/转强确认")+"；评分低于60仅观察、不建议挂单；未触发不追单"}
+
 def _levels(item):
     spot_block = item.get("spot_price", {})
     spot = spot_block.get("price")
@@ -178,7 +209,6 @@ def _levels(item):
             if _finite(candidate_metric.get("atr14")) and candidate_metric["atr14"] > 0:
                 source_tf, candles, metric = tf, candidate, candidate_metric
                 break
-    ema20_level = None
     if metric is None:
         atr = float(spot) * 0.008
         source_tf = "spot_estimate"
@@ -195,50 +225,16 @@ def _levels(item):
         # Candle structure remains in its native exchange scale. A prior candle
         # close is not a contemporaneous quote and must never be used as basis.
         atr = atr_raw
-        ema20_raw = metric.get("ema20")
-        ema20_level = float(ema20_raw) if _finite(ema20_raw) else None
         swing_high = float(swing_high_raw)
         swing_low = float(swing_low_raw)
         level_basis = "closed " + source_tf + " candles; native candle-source scale; no stale-close basis scaling"
     long_trigger = max(float(spot), float(swing_high)) + 0.10 * atr
     short_trigger = min(float(spot), float(swing_low)) - 0.10 * atr
-    retest_long = {"status": "unavailable", "reason": "缺少有效EMA20/ATR数据，不能计算回踩区域"}
-    rebound_short = {"status": "unavailable", "reason": "缺少有效EMA20/ATR数据，不能计算反弹区域"}
-    if ema20_level is not None and metric is not None:
-        zone_low = ema20_level - 0.15 * atr
-        zone_high = ema20_level + 0.15 * atr
-        if zone_high < float(spot):
-            retest_long = {
-                "status": "conditional",
-                "entry_zone": [round(zone_low, 8), round(zone_high, 8)],
-                "stop_loss": round(ema20_level - 0.80 * atr, 8),
-                "take_profit_1": round(ema20_level + 1.50 * atr, 8),
-                "take_profit_2": round(ema20_level + 2.50 * atr, 8),
-                "condition": "回踩区域低于参考价；价格回踩该区域后，等待已收盘1h K线止跌确认才考虑，不接飞刀",
-                "risk_reward": _risk_reward((zone_low + zone_high) / 2, ema20_level - 0.80 * atr,
-                                            ema20_level + 1.50 * atr, ema20_level + 2.50 * atr)
-            }
-        else:
-            retest_long = {
-                "status": "unavailable",
-                "reason": "EMA20回踩区未处于参考价下方；当前不构成回踩做多位置，需价格结构改变后重新评估"
-            }
-        if zone_low > float(spot):
-            rebound_short = {
-                "status": "conditional",
-                "entry_zone": [round(zone_low, 8), round(zone_high, 8)],
-                "stop_loss": round(ema20_level + 0.80 * atr, 8),
-                "take_profit_1": round(float(spot), 8),
-                "take_profit_2": round(swing_low, 8),
-                "condition": "反弹阻力区高于参考价；价格反弹进入该区域后，等待已收盘1h K线转弱/受阻确认才考虑",
-                "risk_reward": _risk_reward((zone_low + zone_high) / 2, ema20_level + 0.80 * atr,
-                                            float(spot), swing_low)
-            }
-        else:
-            rebound_short = {
-                "status": "unavailable",
-                "reason": "EMA20阻力区未处于参考价上方；当前不构成反弹做空位置，需价格结构改变后重新评估"
-            }
+    retest_long = {"status":"unavailable","reason":"缺少有效结构支撑/ATR数据"}
+    rebound_short = {"status":"unavailable","reason":"缺少有效结构压力/ATR数据"}
+    if metric is not None:
+        retest_long = _left_side_setup("long",float(spot),atr,swing_high,swing_low,metric.get("ema20"),metric.get("ema50"),item)
+        rebound_short = _left_side_setup("short",float(spot),atr,swing_high,swing_low,metric.get("ema20"),metric.get("ema50"),item)
     basis_check = _realtime_basis_check(spot_block)
     if basis_check["status"] == "mismatch":
         basis_warning = "同一时刻交易所实时价格差异超过0.5%，已暂停实盘执行建议"

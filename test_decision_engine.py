@@ -65,21 +65,34 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertGreater(levels["short"]["stop_loss"], levels["short"]["entry_trigger"])
         self.assertIn("已收盘K线", levels["long"]["condition"])
         self.assertEqual(levels["pullback_long"]["status"], "conditional")
-        self.assertEqual(levels["rebound_short"]["status"], "unavailable")
+        self.assertEqual(levels["rebound_short"]["status"], "conditional")
         self.assertLess(levels["pullback_long"]["entry_zone"][1], levels["reference_price"])
+        self.assertGreater(levels["rebound_short"]["entry_zone"][0], levels["reference_price"])
         self.assertLess(levels["pullback_long"]["stop_loss"], levels["pullback_long"]["entry_zone"][0])
-        self.assertIn("回踩", levels["pullback_long"]["condition"])
+        self.assertGreater(levels["rebound_short"]["stop_loss"], levels["rebound_short"]["entry_zone"][1])
+        self.assertIn("结构支撑", levels["pullback_long"]["structure_basis"])
+        self.assertIn("结构压力", levels["rebound_short"]["structure_basis"])
 
-    def test_bearish_structure_only_offers_rebound_short_not_pullback_long(self):
+    def test_ema20_is_not_a_hard_veto_for_either_left_side_setup(self):
         item = make_item("bear")
         item["timeframes"]["4h"]["indicators"] = dict(item["timeframes"]["4h"]["indicators"])
         item["timeframes"]["4h"]["indicators"]["ema20"] = 105.0
         levels = analyze_symbol(item)["levels"]
-        self.assertEqual(levels["pullback_long"]["status"], "unavailable")
+        self.assertEqual(levels["pullback_long"]["status"], "conditional")
         self.assertEqual(levels["rebound_short"]["status"], "conditional")
+        self.assertLess(levels["pullback_long"]["entry_zone"][1], levels["reference_price"])
         self.assertGreater(levels["rebound_short"]["entry_zone"][0], levels["reference_price"])
         self.assertGreater(levels["rebound_short"]["stop_loss"], levels["rebound_short"]["entry_zone"][1])
-        self.assertIn("反弹", levels["rebound_short"]["condition"])
+        self.assertIn("EMA20仅参与评分", levels["rebound_short"]["structure_basis"])
+
+    def test_left_side_requires_real_structure_and_rejects_missing_levels(self):
+        item=make_item("bear")
+        item["timeframes"]["4h"]["indicators"]=dict(item["timeframes"]["4h"]["indicators"])
+        item["timeframes"]["4h"]["indicators"]["swing_high_20"]=99.0
+        item["timeframes"]["4h"]["indicators"]["swing_low_20"]=100.0
+        levels=analyze_symbol(item)["levels"]
+        self.assertEqual(levels["pullback_long"]["status"],"unavailable")
+        self.assertEqual(levels["rebound_short"]["status"],"unavailable")
 
     def test_old_candle_close_is_not_used_as_live_exchange_basis(self):
         item = make_item("bull")
