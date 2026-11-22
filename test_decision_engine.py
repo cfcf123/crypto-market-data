@@ -83,13 +83,13 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertLess(levels["pullback_long"]["entry_zone"][1], levels["reference_price"])
         self.assertGreater(levels["rebound_short"]["entry_zone"][0], levels["reference_price"])
         self.assertGreater(levels["rebound_short"]["stop_loss"], levels["rebound_short"]["entry_zone"][1])
-        self.assertIn("EMA20仅参与评分", levels["rebound_short"]["structure_basis"])
+        self.assertIn("EMA20/EMA50仅参与评分", levels["rebound_short"]["structure_basis"])
 
     def test_left_side_requires_real_structure_and_rejects_missing_levels(self):
         item=make_item("bear")
         item["timeframes"]["4h"]["indicators"]=dict(item["timeframes"]["4h"]["indicators"])
-        item["timeframes"]["4h"]["indicators"]["swing_high_20"]=99.0
-        item["timeframes"]["4h"]["indicators"]["swing_low_20"]=100.0
+        item["timeframes"]["4h"]["indicators"]["swing_high_20"]=100.2
+        item["timeframes"]["4h"]["indicators"]["swing_low_20"]=99.8
         levels=analyze_symbol(item)["levels"]
         self.assertEqual(levels["pullback_long"]["status"],"unavailable")
         self.assertEqual(levels["rebound_short"]["status"],"unavailable")
