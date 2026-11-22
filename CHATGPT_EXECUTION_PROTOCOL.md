@@ -25,7 +25,7 @@ This document fixes the operational integration between ChatGPT and GitHub Actio
 5. Once completed with conclusion=success, call fetch_workflow_run_jobs(repo_full_name, run_id) and require collection, validation, analysis, and artifact-upload steps to be successful.
 6. Call fetch_workflow_run_artifacts(repo_full_name, run_id). Select only artifact named market-data-<same run_number>, require expired=false, and record artifact id, created_at, digest.
 7. Download that exact artifact with download_workflow_artifact. Inspect its ZIP and require all five files. Cross-check trigger.txt run_id/run_number/sha against Actions metadata and ensure all JSON generated_at timestamps agree.
-8. Require data-quality.json to report age_seconds <= 600 and all required symbol/timeframe/context freshness checks valid. Require trade-analysis.json for BOTH BTCUSDT and ETHUSDT and validate the mandatory four strategy branches per symbol before writing the report.
+8. Require data-quality.json and trade-analysis.json to exist and parse successfully. Require trade-analysis.json for BOTH BTCUSDT and ETHUSDT and validate the mandatory four strategy branches per symbol before writing the report. Do not perform a separate data-age/freshness gate after download; the user's explicit push already starts a new collection for every task.
 9. Record run id, run number, head SHA, artifact id/digest, generated_at, data age, and workflow conclusion in the report.
 
 ## Workflow trigger scope
@@ -39,7 +39,7 @@ This document fixes the operational integration between ChatGPT and GitHub Actio
 - A run's success is not enough: artifact, SHA, run number, timestamps, quality report, and trade-analysis must all match.
 - If the artifact cannot be downloaded/read or any integrity check fails, mark DATA_UNAVAILABLE and do not produce live price levels from stale data.
 - Do not send an email claiming a complete report unless the exact same validated report is also present in the chat.
-- Preserve all constraints in TASK_REPORT_OUTPUT_RULES.md, including 600-second maximum data age, Binance Spot reference-price authority when available, same-exchange candles per symbol, and all four left/right long/short strategies for BTC and ETH.
+- Preserve all constraints in TASK_REPORT_OUTPUT_RULES.md, including 600-second maximum data age, Binance Spot reference-price authority when available, same-exchange candles per symbol, and all four left/right long/short strategies for BTC and ETH. Do not block report generation solely on a post-download 600-second age calculation; every user request must trigger a new push and use only that push's artifact.
 
 
 ## Permanent user preference: no scheduled collection
@@ -56,9 +56,9 @@ The user explicitly requires that market data collection must NOT run every 10 m
 ## Same-time cross-exchange basis validation (mandatory)
 - Never compare Binance Spot live price with a previous candle close to determine exchange basis. Candle close age is not a live quote timestamp.
 - Collector must timestamp every secondary live ticker independently (cross_exchange[].observed_at) and timestamp the Binance Spot reference (spot_price.observed_at).
-- Compare only valid positive live prices whose timestamps differ by no more than 30 seconds and whose retrieval age is no more than 600 seconds.
+- Compare only valid positive live prices whose timestamps differ by no more than 30 seconds.
 - Calculate basis as abs(secondary_live_price - Binance_spot_price) / Binance_spot_price * 100. A verified same-time difference above 0.5% sets execution_allowed=false and execution_status=paused_basis_mismatch.
-- If no secondary live quote passes timestamp/freshness checks, set execution_allowed=false and execution_status=paused_basis_unverified. Missing data must never be interpreted as zero basis.
+- If no secondary live quote has a valid aligned timestamp, set execution_allowed=false and execution_status=paused_basis_unverified. Missing data must never be interpreted as zero basis.
 - Do not scale ATR, EMA, swing highs/lows, or other candle structure by the ratio between a live spot price and a stale candle close. Keep candle-derived levels in the source candle series native price scale.
 - Preserve conditional levels for observation, but clearly pause live execution when basis is mismatched or unverified. Automated tests must cover stale-close false positives, aligned live prices below/above threshold, and missing/misaligned timestamps.
 
@@ -70,4 +70,4 @@ The user explicitly requires that market data collection must NOT run every 10 m
 4. 可用候选必须提供入场区间、止损、TP1、TP2、风险收益比、结构依据、质量评分/等级和收盘K线确认条件。评分低于60仅观察，不建议挂单；预埋价不等于成交。
 5. 评分综合大周期趋势、结构位置/距离及EMA20/EMA50辅助方向。成交量拒绝、供需区、成交密集区、VWAP、斐波那契、威科夫等仅在数据实际可用时纳入，不得假称已计算。
 6. 止损置于结构失效位置之外；止盈在有利方向，TP1/TP2顺序正确，盈亏比有效。
-7. 不得放宽600秒数据新鲜度、Binance参考价、同币种K线来源一致、基差超过0.5%暂停执行、用户手动Push触发及四类策略完整输出等既有保护。
+7. 不得取消本次 Push 与本次 Artifact 的对应关系、Binance参考价、同币种K线来源一致、基差超过0.5%暂停执行、用户手动Push触发及四类策略完整输出等既有保护。
