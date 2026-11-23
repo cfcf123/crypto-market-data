@@ -32,3 +32,10 @@ Requires Python 3.10+ and no third-party packages: `python collector.py`
 - GitHub-hosted runners and exchange endpoints may be delayed, rate-limited or regionally unavailable. Cron is best-effort, not a guaranteed execution time.
 - This is a data collector, not an automated trading system or financial advice.
 - Never add passwords, API secrets, recovery codes or private account data to this public repository.
+
+
+## News and event-risk collection
+- Seven-day RSS snapshot: crypto/ETF flows, Fed and US macro, Trump policy, geopolitics, Nvidia/AI semiconductors, Binance/CZ/CoinGlass.
+- Google News topic searches plus Federal Reserve, SEC and White House official RSS.
+- Feed health, links, publishers and publication times are retained. Headlines are not trading signals.
+- Structured economic calendar and live ETF/derivatives flow sources must be disclosed separately when unavailable.
