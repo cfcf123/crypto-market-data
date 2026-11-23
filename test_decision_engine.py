@@ -172,6 +172,52 @@ class DecisionEngineTests(unittest.TestCase):
                     self.assertGreater(levels[key]["risk_reward"]["tp1_r"], 0)
                     self.assertGreater(levels[key]["risk_reward"]["tp2_r"], 0)
 
+    def test_four_strategy_weights_and_no_trade_sum_to_100(self):
+        for direction in ("bull", "bear"):
+            result = analyze_symbol(make_item(direction))
+            weights = result["strategy_weights_pct"]
+            self.assertEqual(set(weights), {
+                "left_pullback_long", "right_breakout_long",
+                "left_rebound_short", "right_breakdown_short", "no_trade"
+            })
+            self.assertAlmostEqual(sum(weights.values()), 100.0, places=1)
+            self.assertEqual(weights, result["levels"]["strategy_weights_pct"])
+            self.assertEqual(
+                weights["left_pullback_long"] + weights["right_breakout_long"]
+                + weights["left_rebound_short"] + weights["right_breakdown_short"]
+                + weights["no_trade"], 100.0
+            )
+
+    def test_strategy_weights_are_attached_to_each_setup(self):
+        result = analyze_symbol(make_item("bull"))
+        levels = result["levels"]
+        self.assertEqual(
+            levels["pullback_long"]["strategy_weight_pct"],
+            result["strategy_weights_pct"]["left_pullback_long"]
+        )
+        self.assertEqual(
+            levels["long"]["strategy_weight_pct"],
+            result["strategy_weights_pct"]["right_breakout_long"]
+        )
+        self.assertEqual(
+            levels["rebound_short"]["strategy_weight_pct"],
+            result["strategy_weights_pct"]["left_rebound_short"]
+        )
+        self.assertEqual(
+            levels["short"]["strategy_weight_pct"],
+            result["strategy_weights_pct"]["right_breakdown_short"]
+        )
+
+    def test_missing_left_structure_gets_zero_left_strategy_weight(self):
+        item = make_item("bear")
+        item["timeframes"]["4h"]["indicators"] = dict(item["timeframes"]["4h"]["indicators"])
+        item["timeframes"]["4h"]["indicators"]["swing_high_20"] = 100.2
+        item["timeframes"]["4h"]["indicators"]["swing_low_20"] = 99.8
+        result = analyze_symbol(item)
+        self.assertEqual(result["strategy_weights_pct"]["left_pullback_long"], 0.0)
+        self.assertEqual(result["strategy_weights_pct"]["left_rebound_short"], 0.0)
+        self.assertGreater(result["strategy_weights_pct"]["no_trade"], 0.0)
+
     def test_dataset_missing_symbol_is_explicit(self):
         result = analyze_dataset({"symbols": {"BTCUSDT": make_item()}})
         self.assertEqual(result["symbols"]["ETHUSDT"]["status"], "unavailable")
