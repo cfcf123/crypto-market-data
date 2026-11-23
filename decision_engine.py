@@ -98,27 +98,33 @@ def _timeframe_evidence(candles, metric):
 
 
 def _wyckoff_adjustment(item):
-    """Small bounded adjustment: Wyckoff confirms/contradicts, never dominates."""
+    """Sequence-aware, bounded adjustment; confirmed tests outweigh candidates."""
     adjustment = 0.0
     evidence = []
     for tf in ("1M", "1w", "1d", "4h"):
         block = item.get("higher_timeframes", {}).get(tf, {}) if tf in ("1M", "1w") else item.get("timeframes", {}).get(tf, {})
         w = block.get("wyckoff", {}) if isinstance(block, dict) else {}
-        events = w.get("events", {})
+        events = w.get("events", {}) if isinstance(w, dict) else {}
         phase = w.get("phase", "")
-        if events.get("sos_candidate") or phase == "strength_confirmation":
-            adjustment += 0.04
-            evidence.append(tf + ": SOS/strength evidence (+)")
-        if events.get("sow_candidate") or phase == "weakness_confirmation":
-            adjustment -= 0.04
-            evidence.append(tf + ": SOW/weakness evidence (-)")
-        if events.get("spring_candidate"):
+        if events.get("lps_confirmed") or phase == "lps_confirmed":
+            adjustment += 0.05
+            evidence.append(tf + ": LPS回踩确认 (+)")
+        elif events.get("sos_candidate") or phase == "sos_waiting_lps_confirmation":
             adjustment += 0.02
-            evidence.append(tf + ": Spring candidate (small +, unconfirmed)")
-        if events.get("utad_candidate"):
+            evidence.append(tf + ": SOS候选/等待LPS（小幅+）")
+        if events.get("lpsy_confirmed") or phase == "lpsy_confirmed":
+            adjustment -= 0.05
+            evidence.append(tf + ": LPSY反抽确认 (-)")
+        elif events.get("sow_candidate") or phase == "sow_waiting_lpsy_confirmation":
             adjustment -= 0.02
-            evidence.append(tf + ": UTAD candidate (small -, unconfirmed)")
-    return _clamp(adjustment, -0.12, 0.12), evidence
+            evidence.append(tf + ": SOW候选/等待LPSY（小幅-）")
+        if events.get("spring_candidate"):
+            adjustment += 0.01
+            evidence.append(tf + ": Spring候选（未确认，极小+）")
+        if events.get("utad_candidate"):
+            adjustment -= 0.01
+            evidence.append(tf + ": UTAD候选（未确认，极小-）")
+    return _clamp(adjustment, -0.16, 0.16), evidence
 
 
 def _derivatives_adjustment(item):
