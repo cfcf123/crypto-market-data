@@ -285,6 +285,44 @@ def _levels(item):
     }
 
 
+def _strategy_opportunity_weights(levels, final_score, available_weight, conflict):
+    """Allocate relative opportunity emphasis across four setups plus no-trade.
+
+    These are comparative evidence weights, not win probabilities. Right-side
+    scores measure directional/setup quality before the required close-confirmation;
+    they do not imply that a trigger has fired.
+    """
+    def clamp_score(value):
+        return round(max(0.0, min(100.0, float(value))), 2)
+
+    pullback = levels.get("pullback_long", {})
+    rebound = levels.get("rebound_short", {})
+    scores = {
+        "left_pullback_long": clamp_score(
+            pullback.get("setup_score", 0) + 12.0 * final_score
+        ) if pullback.get("status") == "conditional" else 0.0,
+        "right_breakout_long": clamp_score(50.0 + 35.0 * final_score),
+        "left_rebound_short": clamp_score(
+            rebound.get("setup_score", 0) - 12.0 * final_score
+        ) if rebound.get("status") == "conditional" else 0.0,
+        "right_breakdown_short": clamp_score(50.0 - 35.0 * final_score),
+    }
+    best = max(scores.values()) if scores else 0.0
+    no_trade_score = max(15.0, min(
+        70.0,
+        20.0 + 25.0 * (1.0 - available_weight) + 15.0 * conflict
+        + (15.0 if best < 55.0 else 0.0)
+    ))
+    raw = {**scores, "no_trade": no_trade_score}
+    total = sum(raw.values())
+    weights = {key: round(value / total * 100.0, 1) for key, value in raw.items()}
+    # Put rounding remainder into no_trade so the five displayed values sum exactly.
+    weights["no_trade"] = round(100.0 - sum(
+        value for key, value in weights.items() if key != "no_trade"
+    ), 1)
+    return scores, weights
+
+
 def analyze_symbol(item):
     evidence = {}
     available_weight = 0.0
@@ -324,8 +362,23 @@ def analyze_symbol(item):
                "neutral": round(neutral / total * 100, 1)}
     # Correct rounding drift so displayed percentages always total exactly 100.0.
     weights["neutral"] = round(100.0 - weights["long"] - weights["short"], 1)
+    levels = _levels(item)
+    strategy_scores, strategy_weights = _strategy_opportunity_weights(
+        levels, final_score, available_weight, conflict
+    )
+    levels["strategy_scores"] = strategy_scores
+    levels["strategy_weights_pct"] = strategy_weights
+    for key, strategy_key in (
+        ("pullback_long", "left_pullback_long"),
+        ("long", "right_breakout_long"),
+        ("rebound_short", "left_rebound_short"),
+        ("short", "right_breakdown_short"),
+    ):
+        levels[key]["strategy_score"] = strategy_scores[strategy_key]
+        levels[key]["strategy_weight_pct"] = strategy_weights[strategy_key]
     return {
         "weights_pct": weights,
+        "strategy_weights_pct": strategy_weights,
         "evidence_score": round(final_score, 4),
         "timeframe_conflict": round(conflict, 4),
         "available_weight_pct": round(available_weight * 100, 1),
@@ -335,7 +388,7 @@ def analyze_symbol(item):
         "derivatives_adjustment": round(derivatives_adjustment, 4),
         "derivatives_context": derivatives_context,
         "derivatives_notes": derivatives_notes,
-        "levels": _levels(item),
+        "levels": levels,
         "interpretation": "权重表示多周期证据倾向，不是胜率；观望权重随方向冲突上升。"
     }
 
