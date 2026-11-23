@@ -524,7 +524,9 @@ def main():
         for job in as_completed(jobs):
             symbol,item=job.result()
             result["symbols"][symbol]=item
-    # Best-effort news snapshot; market data collection remains independent.\n    result["news"] = collect_news()\n    mark_collection_complete(result)
+    # Best-effort news snapshot; market data collection remains independent.
+    result["news"] = collect_news()
+    mark_collection_complete(result)
     os.makedirs("output",exist_ok=True)
     with open("output/market-data.json","w",encoding="utf-8") as f:json.dump(result,f,ensure_ascii=False,indent=2)
     summary={}
