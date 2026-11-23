@@ -1,7 +1,7 @@
-request_id=manual-report-20261123T113800Z
-requested_at_utc=2026-11-23T11:38:00Z
-requested_at_asia_kuala_lumpur=2026-11-23T19:38:00+08:00
+request_id=manual-report-20261123T143800Z
+requested_at_utc=2026-11-23T14:38:00Z
+requested_at_asia_seoul=2026-11-23T23:38:00+09:00
 trigger=user-explicit-strict-task-request
-execution_id=nov23-1938-strict-btc-eth
+execution_id=nov23-2338-strict-btc-eth
 collection_policy=push-only-fresh-run-no-reuse
 closed_candles_only=true
