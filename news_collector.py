@@ -20,7 +20,7 @@ TOPICS=[
 FEEDS=[{"id":i,"category":c,"url":BASE.format(quote(q))} for i,c,q in TOPICS]+[
 {"id":"federal_reserve_official","category":"fed_official","url":"https://www.federalreserve.gov/feeds/press_all.xml"},
 {"id":"sec_official","category":"regulatory_official","url":"https://www.sec.gov/news/pressreleases.rss"},
-{"id":"whitehouse_official","category":"us_policy_official","url":"https://www.whitehouse.gov/feed/"}]
+{"id":"whitehouse_official","category":"us_policy_official","url":"https://www.whitehouse.gov/news/feed/"}]
 
 def _txt(node,tag):
  x=node.find(tag)
