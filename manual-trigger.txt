@@ -1,11 +1,12 @@
-request_id=manual-report-20261123-safe-short-1795448396112
-requested_at_date=2026-11-23
+request_id=manual-report-20261124-1795450983692
+requested_at_date=2026-11-24
 trigger=user-explicit-strict-task-request
-execution_id=nov23-manual-btc-eth-safe-short
+execution_id=nov24-manual-btc-eth-strategy-weights
 collection_policy=push-only-fresh-run-no-reuse
 closed_candles_only=true
 price_authority=binance_spot_ticker_price_api_only
 symbols=BTCUSDT,ETHUSDT
-report=full_btc_eth_left_right_long_short_weights_levels_wyckoff_news_safe_short_fallback
+report=full_btc_eth_left_right_long_short_strategy_weights_pct_direction_weights_levels_wyckoff_news_safe_short_fallback
+strategy_weights=left_pullback_long,right_breakout_long,left_rebound_short,right_breakdown_short,no_trade_sum_100
 safe_short_rules=pressure_rejection_and_breakdown_retest_confirmation
 email_to=cao2026feng@outlook.com
