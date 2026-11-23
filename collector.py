@@ -3,6 +3,7 @@
 import json, os, time, urllib.request, urllib.parse
 from datetime import datetime, timezone
 from wyckoff import analyze as analyze_wyckoff
+from news_collector import collect_news
 
 TIMEOUT = 6
 MAX_HTTP_ATTEMPTS = 2
@@ -480,10 +481,10 @@ def mark_collection_complete(result, completed_at=None):
 
 
 def main():
-    result={"collection_started_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.8","indicator_schema_version":"1.0",
+    result={"collection_started_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.9","news_schema_version":"1.0","indicator_schema_version":"1.0",
      "collection_policy":{"http_timeout_seconds":TIMEOUT,"max_http_attempts":MAX_HTTP_ATTEMPTS,"kline_workers_per_symbol":4,"retry_policy":"retry transient network/5xx once; fast-fail permanent 4xx and 429"},
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
-     "symbols":{}}
+     "symbols":{},"news":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
     def collect_symbol(symbol):
         item={"spot_price":fetch_price(symbol),"futures_context":fetch_futures_context(symbol),"timeframes":{}}
@@ -523,7 +524,7 @@ def main():
         for job in as_completed(jobs):
             symbol,item=job.result()
             result["symbols"][symbol]=item
-    mark_collection_complete(result)
+    # Best-effort news snapshot; market data collection remains independent.\n    result["news"] = collect_news()\n    mark_collection_complete(result)
     os.makedirs("output",exist_ok=True)
     with open("output/market-data.json","w",encoding="utf-8") as f:json.dump(result,f,ensure_ascii=False,indent=2)
     summary={}
