@@ -1,8 +1,7 @@
-request_id=manual-report-20261122T171612Z
-requested_at_utc=2026-11-22T17:16:12Z
-requested_at_asia_singapore=2026-11-23T01:16:12+08:00
+request_id=manual-report-20261123T022900Z
+requested_at_utc=2026-11-23T02:29:00Z
+requested_at_asia_kuala_lumpur=2026-11-23T10:29:00+08:00
 trigger=user-explicit-strict-task-request
-execution_id=nov23-0116-strict-btc-eth
+execution_id=nov23-1029-strict-btc-eth
 collection_policy=push-only-fresh-run-no-reuse
-max_data_age_seconds=600
 closed_candles_only=true
