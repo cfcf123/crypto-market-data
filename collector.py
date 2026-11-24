@@ -101,7 +101,7 @@ def fetch_price(symbol):
             "attempts":errors,"failed_at":datetime.now(timezone.utc).isoformat()}
 
 def fetch_perpetual_price(symbol):
-    """Binance USD-M perpetual ticker is authoritative for non-spot contracts such as NVDAUSDT."""
+    """Use Binance USD-M first, then independent perpetual venues; never substitute equity spot."""
     errors=[]
     hosts=["https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com"]
     for host in hosts:
@@ -120,8 +120,34 @@ def fetch_perpetual_price(symbol):
         except Exception as e:
             errors.append({"source":"Binance USD-M Futures: "+host,"error":str(e)})
             if getattr(e,"code",None) in PERMANENT_PROVIDER_CODES: break
-    return {"error":"Binance USD-M perpetual ticker unavailable; no alternate-exchange price substituted",
-            "source_status":"unavailable","price_authority":"BINANCE_USDM_PERPETUAL_REQUIRED",
+    okx_inst=symbol.replace("USDT","-USDT-SWAP")
+    fallbacks=[
+        ("OKX USDT Swap","OKX_USDT_SWAP_PERPETUAL","https://www.okx.com/api/v5/market/ticker?"+qs({"instId":okx_inst})),
+        ("Bybit Linear Perpetual","BYBIT_LINEAR_PERPETUAL","https://api.bybit.com/v5/market/tickers?"+qs({"category":"linear","symbol":symbol}))
+    ]
+    for provider,authority,url in fallbacks:
+        try:
+            d=get_json(url)
+            if provider=="OKX USDT Swap":
+                if not isinstance(d,dict) or d.get("code")!="0" or not d.get("data"): raise ValueError("invalid OKX ticker payload")
+                row=d["data"][0]
+                if row.get("instId")!=okx_inst: raise ValueError("OKX instrument mismatch")
+                p=float(row["last"])
+            else:
+                if not isinstance(d,dict) or d.get("retCode")!=0 or not d.get("result",{}).get("list"): raise ValueError("invalid Bybit ticker payload")
+                row=d["result"]["list"][0]
+                if row.get("symbol")!=symbol: raise ValueError("Bybit symbol mismatch")
+                p=float(row["lastPrice"])
+            if not __import__("math").isfinite(p) or p<=0: raise ValueError(provider+" price must be finite and positive")
+            observed_at=datetime.now(timezone.utc).isoformat()
+            cross_exchange=validate_price_cross_exchange(symbol,p)
+            return {"price":p,"source":provider+" perpetual ticker","source_status":"ok",
+                    "price_authority":authority,"reference_price_type":"perpetual_contract_last_price",
+                    "observed_at":observed_at,"attempts":errors,"cross_exchange":cross_exchange}
+        except Exception as e:
+            errors.append({"source":provider,"error":str(e)})
+    return {"error":"All supported perpetual ticker sources unavailable; no equity spot or candle close substituted",
+            "source_status":"unavailable","price_authority":"PERPETUAL_TICKER_UNAVAILABLE",
             "attempts":errors,"failed_at":datetime.now(timezone.utc).isoformat()}
 
 def normalize(rows, source, interval, now_ms, bybit=False, okx=False):
