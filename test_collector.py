@@ -161,6 +161,20 @@ class NvdaPerpetualPriceTests(unittest.TestCase):
         self.assertIn("perpetual ticker", result["source"])
         cross.assert_called_once_with("NVDAUSDT", 150.25)
 
+    def test_nvda_falls_back_to_okx_perpetual_after_binance_is_blocked(self):
+        from unittest.mock import patch
+        import urllib.error
+        blocked=urllib.error.HTTPError("https://fapi.binance.com",451,"Unavailable",{},None)
+        okx={"code":"0","data":[{"instId":"NVDA-USDT-SWAP","last":"151.75"}]}
+        with patch("collector.get_json", side_effect=[blocked, okx]) as request, \
+             patch("collector.validate_price_cross_exchange", return_value=[]):
+            result=collector.fetch_perpetual_price("NVDAUSDT")
+        self.assertEqual(result["price"],151.75)
+        self.assertEqual(result["price_authority"],"OKX_USDT_SWAP_PERPETUAL")
+        self.assertEqual(result["reference_price_type"],"perpetual_contract_last_price")
+        self.assertIn("OKX USDT Swap perpetual ticker",result["source"])
+        self.assertEqual(request.call_count,2)
+
     def test_nvda_is_in_collected_symbol_set(self):
         self.assertIn("NVDAUSDT", collector.SYMBOLS)
 
