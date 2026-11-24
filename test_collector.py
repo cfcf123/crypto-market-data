@@ -162,3 +162,20 @@ class NvdaPerpetualPriceTests(unittest.TestCase):
 
     def test_nvda_is_in_collected_symbol_set(self):
         self.assertIn("NVDAUSDT", collector.SYMBOLS)
+
+
+class NvdaCrossVenueTickerTests(unittest.TestCase):
+    def test_nvda_cross_venue_comparison_never_uses_eth_ticker(self):
+        from unittest.mock import patch
+        requested = []
+        def fake_get_json(url, retries=collector.MAX_HTTP_ATTEMPTS, timeout=collector.TIMEOUT):
+            requested.append(url)
+            if "bybit.com" in url:
+                return {"result":{"list":[{"lastPrice":"150.0"}]}}
+            return {"data":[{"last":"150.0"}]}
+        with patch("collector.get_json", side_effect=fake_get_json):
+            checks = collector.validate_price_cross_exchange("NVDAUSDT", 150.0)
+        self.assertTrue(any("symbol=NVDAUSDT" in url for url in requested))
+        self.assertTrue(any("instId=NVDA-USDT-SWAP" in url for url in requested))
+        self.assertFalse(any("ETH-USDT-SWAP" in url for url in requested))
+        self.assertEqual(len(checks), 2)
