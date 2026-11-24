@@ -530,7 +530,7 @@ def main():
         daily=item["timeframes"].get("1d",{})
         if "candles" in daily:
             item["higher_timeframes"]={}
-            for htf, lookback, vol_window in (("1w",40,20),("1M",6,6)):
+            for htf, lookback, vol_window in (("1w", (30 if symbol=="NVDAUSDT" else 40), 20),("1M", (5 if symbol=="NVDAUSDT" else 6), (5 if symbol=="NVDAUSDT" else 6))):
                 bars=aggregate_closed_candles(daily["candles"],htf)
                 item["higher_timeframes"][htf]={
                     "source_exchange":daily.get("exchange"),
