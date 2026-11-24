@@ -68,7 +68,7 @@ def validate(data, now=None):
             if spot_age < -60 or spot_age > MAX_SPOT_AGE:
                 raise ValueError(f"{symbol}: spot price is stale or future-dated ({spot_age:.0f}s)")
             spot_freshness = {"age_seconds": round(spot_age), "max_age_seconds": MAX_SPOT_AGE,
-                              "status": "fresh", "observed_at": spot.get("observed_at")}
+                              "status": "fresh", "reference_price_type":spot.get("reference_price_type", "spot_ticker_price" if symbol != "NVDAUSDT" else "perpetual_contract_last_price"), "observed_at": spot.get("observed_at")}
         # Only compare simultaneous live quotes; a candle close is never a ticker.
         cross_reports = []
         primary_stamp = spot.get("observed_at")
