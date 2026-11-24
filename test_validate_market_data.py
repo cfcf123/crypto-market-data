@@ -38,7 +38,7 @@ def sample():
                     "open":1.0,"high":2.0,"low":0.5,"close":1.5,"volume":10.0} for i in range(300)]
         timeframes[tf] = {"source_status":"ok","exchange":"OKX USDT Swap","retrieved_at":observed,"candles":candles}
     return {"generated_at":observed,"symbols":{
-      s: {"spot_price":{"price":100.0,"source":("Binance USD-M Futures perpetual ticker: https://fapi.binance.com" if s=="NVDAUSDT" else "Binance Spot: https://data-api.binance.vision"),"source_status":"ok","price_authority":("BINANCE_USDM_PERPETUAL" if s=="NVDAUSDT" else "BINANCE"),"observed_at":observed,"cross_exchange":[{"source":"OKX USDT Swap","price":100.1,"observed_at":observed}]},
+      s: {"spot_price":{"price":100.0,"source":("Binance USD-M Futures perpetual ticker: https://fapi.binance.com" if s=="NVDAUSDT" else "Binance Spot: https://data-api.binance.vision"),"source_status":"ok","price_authority":("BINANCE_USDM_PERPETUAL" if s=="NVDAUSDT" else "BINANCE"),"reference_price_type":("perpetual_contract_last_price" if s=="NVDAUSDT" else "spot_ticker_price"),"observed_at":observed,"cross_exchange":[{"source":"OKX USDT Swap","price":100.1,"observed_at":observed}]},
           "timeframes":timeframes,
           "higher_timeframes":{"1w":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1w"),"wyckoff":{"status":"ok"}},
                                "1M":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1M"),"wyckoff":{"status":"ok"}}},
@@ -145,6 +145,15 @@ class MarketDataValidationTests(unittest.TestCase):
     def test_missing_price_fails(self):
         d=sample(); d["symbols"]["ETHUSDT"]["spot_price"]["price"]=None
         with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+    def test_nvda_okx_perpetual_ticker_is_accepted(self):
+        d=sample()
+        p=d["symbols"]["NVDAUSDT"]["spot_price"]
+        p["source"]="OKX USDT Swap perpetual ticker"
+        p["price_authority"]="OKX_USDT_SWAP_PERPETUAL"
+        p["reference_price_type"]="perpetual_contract_last_price"
+        out=validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
+        self.assertEqual(out["symbols"]["NVDAUSDT"]["spot"]["freshness"]["reference_price_type"],"perpetual_contract_last_price")
+
     def test_binance_authority_must_match_source(self):
         d=sample(); d["symbols"]["BTCUSDT"]["spot_price"]["source"]="OKX"
         with self.assertRaises(ValueError): validate(d, datetime(2026,11,18,7,1,tzinfo=timezone.utc))
