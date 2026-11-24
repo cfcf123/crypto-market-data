@@ -115,7 +115,7 @@ def fetch_perpetual_price(symbol):
             observed_at=datetime.now(timezone.utc).isoformat()
             cross_exchange=validate_price_cross_exchange(symbol,p)
             return {"price":p,"source":"Binance USD-M Futures perpetual ticker: "+host,
-                    "source_status":"ok","price_authority":"BINANCE_USDM_PERPETUAL",
+                    "source_status":"ok","price_authority":"BINANCE_USDM_PERPETUAL","reference_price_type":"perpetual_contract_last_price",
                     "observed_at":observed_at,"attempts":errors,"cross_exchange":cross_exchange}
         except Exception as e:
             errors.append({"source":"Binance USD-M Futures: "+host,"error":str(e)})
