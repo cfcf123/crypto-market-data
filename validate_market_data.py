@@ -46,17 +46,25 @@ def validate(data, now=None):
         if spot.get("source_status") == "unavailable":
             if price is not None:
                 raise ValueError(f"{symbol}: unavailable spot source must not contain a substitute price")
-            expected_unavailable_authority = "BINANCE_USDM_PERPETUAL_REQUIRED" if symbol == "NVDAUSDT" else "BINANCE_REQUIRED"
+            expected_unavailable_authority = "PERPETUAL_TICKER_UNAVAILABLE" if symbol == "NVDAUSDT" else "BINANCE_REQUIRED"
             if authority != expected_unavailable_authority:
                 raise ValueError(f"{symbol}: unavailable authoritative price source marker is invalid")
-            spot_freshness = {"status":"unavailable","reason":spot.get("error","Binance Spot unavailable"),
+            spot_freshness = {"status":"unavailable","reason":spot.get("error","authoritative price unavailable"),
                               "attempts":spot.get("attempts",[])}
         else:
             if not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0:
                 raise ValueError(f"{symbol}: missing/invalid spot price")
             if symbol == "NVDAUSDT":
-                if authority != "BINANCE_USDM_PERPETUAL" or "Binance USD-M Futures perpetual ticker" not in str(spot.get("source", "")):
-                    raise ValueError(f"{symbol}: non-Binance USD-M perpetual ticker is not authoritative")
+                allowed_nvda_sources = {
+                    "BINANCE_USDM_PERPETUAL": "Binance USD-M Futures perpetual ticker",
+                    "OKX_USDT_SWAP_PERPETUAL": "OKX USDT Swap perpetual ticker",
+                    "BYBIT_LINEAR_PERPETUAL": "Bybit Linear Perpetual perpetual ticker",
+                }
+                expected_source = allowed_nvda_sources.get(authority)
+                if not expected_source or expected_source not in str(spot.get("source", "")):
+                    raise ValueError(f"{symbol}: reference price must come from a supported perpetual ticker")
+                if spot.get("reference_price_type") != "perpetual_contract_last_price":
+                    raise ValueError(f"{symbol}: reference price type must be perpetual contract last price")
             else:
                 if authority != "BINANCE" or not str(spot.get("source", "")).startswith("Binance Spot"):
                     raise ValueError(f"{symbol}: non-Binance spot price is not authoritative")
