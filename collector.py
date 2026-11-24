@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Public BTCUSDT/ETHUSDT collector. Read-only; no credentials or trading permissions."""
+"""Public BTCUSDT/ETHUSDT/NVDAUSDT perpetual collector. Read-only; no credentials or trading permissions."""
 import json, os, time, urllib.request, urllib.parse
 from datetime import datetime, timezone
 from wyckoff import analyze as analyze_wyckoff
@@ -9,7 +9,7 @@ TIMEOUT = 6
 MAX_HTTP_ATTEMPTS = 2
 RETRYABLE_HTTP_CODES = {408, 425, 500, 502, 503, 504}
 PERMANENT_PROVIDER_CODES = {400, 401, 403, 404, 405, 451, 429}
-SYMBOLS = ["BTCUSDT", "ETHUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "NVDAUSDT"]
 INTERVALS = ["1d", "12h", "4h", "1h", "15m", "5m", "1m"]
 KLINE_LIMITS = {"1d": 800}
 PRICE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com",
@@ -97,6 +97,30 @@ def fetch_price(symbol):
                 break
     return {"error":"Binance Spot official endpoints unavailable; no alternate-exchange price substituted",
             "source_status":"unavailable","price_authority":"BINANCE_REQUIRED",
+            "attempts":errors,"failed_at":datetime.now(timezone.utc).isoformat()}
+
+def fetch_perpetual_price(symbol):
+    """Binance USD-M perpetual ticker is authoritative for non-spot contracts such as NVDAUSDT."""
+    errors=[]
+    hosts=["https://fapi.binance.com","https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com"]
+    for host in hosts:
+        try:
+            d=get_json(host+"/fapi/v1/ticker/price?"+qs({"symbol":symbol}))
+            if not isinstance(d,dict) or d.get("symbol") != symbol:
+                raise ValueError("symbol mismatch or invalid Binance USD-M ticker payload")
+            p=float(d["price"])
+            if not __import__("math").isfinite(p) or p <= 0:
+                raise ValueError("Binance USD-M contract price must be finite and positive")
+            observed_at=datetime.now(timezone.utc).isoformat()
+            cross_exchange=validate_price_cross_exchange(symbol,p)
+            return {"price":p,"source":"Binance USD-M Futures perpetual ticker: "+host,
+                    "source_status":"ok","price_authority":"BINANCE_USDM_PERPETUAL",
+                    "observed_at":observed_at,"attempts":errors,"cross_exchange":cross_exchange}
+        except Exception as e:
+            errors.append({"source":"Binance USD-M Futures: "+host,"error":str(e)})
+            if getattr(e,"code",None) in PERMANENT_PROVIDER_CODES: break
+    return {"error":"Binance USD-M perpetual ticker unavailable; no alternate-exchange price substituted",
+            "source_status":"unavailable","price_authority":"BINANCE_USDM_PERPETUAL_REQUIRED",
             "attempts":errors,"failed_at":datetime.now(timezone.utc).isoformat()}
 
 def normalize(rows, source, interval, now_ms, bybit=False, okx=False):
@@ -481,13 +505,13 @@ def mark_collection_complete(result, completed_at=None):
 
 
 def main():
-    result={"collection_started_at":datetime.now(timezone.utc).isoformat(),"collector_version":"3.9","news_schema_version":"1.0","indicator_schema_version":"1.0",
+    result={"collection_started_at":datetime.now(timezone.utc).isoformat(),"collector_version":"4.0","news_schema_version":"1.0","indicator_schema_version":"1.0",
      "collection_policy":{"http_timeout_seconds":TIMEOUT,"max_http_attempts":MAX_HTTP_ATTEMPTS,"kline_workers_per_symbol":4,"retry_policy":"retry transient network/5xx once; fast-fail permanent 4xx and 429"},
      "disclaimer":"Public market data only; not financial advice; no trading actions. Kline series are never mixed across exchanges.",
      "symbols":{},"news":{}}
     from concurrent.futures import ThreadPoolExecutor, as_completed
     def collect_symbol(symbol):
-        item={"spot_price":fetch_price(symbol),"futures_context":fetch_futures_context(symbol),"timeframes":{}}
+        item={"spot_price":(fetch_perpetual_price(symbol) if symbol=="NVDAUSDT" else fetch_price(symbol)),"futures_context":fetch_futures_context(symbol),"timeframes":{}}
         with ThreadPoolExecutor(max_workers=4) as pool:
             jobs={pool.submit(fetch_klines,symbol,tf,KLINE_LIMITS.get(tf,500)):tf for tf in INTERVALS}
             for job in as_completed(jobs):
