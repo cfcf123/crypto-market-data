@@ -405,7 +405,10 @@ def _pearson(xs, ys):
 
 
 def _hourly_return_map(item):
-    candles = item.get("timeframes", {}).get("1h", {}).get("candles", [])
+    block = item.get("timeframes", {}).get("1h", {})
+    if block.get("source_status") != "ok":
+        return {}
+    candles = block.get("candles", [])
     return {int(row["close_time"]): float(row["close"]) for row in candles
             if _finite(row.get("close")) and float(row["close"]) > 0}
 
@@ -413,10 +416,17 @@ def _hourly_return_map(item):
 def _cross_asset_linkage(symbols):
     nvda = symbols.get("NVDAUSDT", {})
     base = _hourly_return_map(nvda) if isinstance(nvda, dict) else {}
-    output = {"method": "Pearson correlation of synchronized 1h close-to-close returns",
+    nvda_source = nvda.get("timeframes", {}).get("1h", {}).get("exchange") if isinstance(nvda, dict) else None
+    output = {"method": "Pearson correlation of synchronized 1h close-to-close returns; only same-exchange candle sources are compared",
               "timeframes": {"24h": 24, "72h": 72, "168h": 168}, "pairs": {}}
     for other in ("BTCUSDT", "ETHUSDT"):
         item = symbols.get(other, {})
+        other_source = item.get("timeframes", {}).get("1h", {}).get("exchange") if isinstance(item, dict) else None
+        if not nvda_source or not other_source or nvda_source != other_source:
+            output["pairs"]["NVDAUSDT_vs_"+other] = {"status": "unavailable",
+                "reason": "1h candle sources differ or are unavailable; cross-exchange correlation is not calculated",
+                "NVDA_source": nvda_source, "other_source": other_source}
+            continue
         other_map = _hourly_return_map(item) if isinstance(item, dict) else {}
         common = sorted(set(base) & set(other_map))
         paired = []
