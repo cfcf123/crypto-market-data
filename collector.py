@@ -55,9 +55,10 @@ def validate_price_cross_exchange(symbol, primary_price):
     checks=[]
     from concurrent.futures import ThreadPoolExecutor
     checks=[]
+    okx_inst = symbol.replace("USDT", "-USDT-SWAP")
     sources = [
         ("Bybit Linear","https://api.bybit.com/v5/market/tickers?category=linear&symbol="+symbol),
-        ("OKX USDT Swap","https://www.okx.com/api/v5/market/ticker?instId="+("BTC-USDT-SWAP" if symbol=="BTCUSDT" else "ETH-USDT-SWAP"))
+        ("OKX USDT Swap","https://www.okx.com/api/v5/market/ticker?instId="+okx_inst)
     ]
     def check(source):
         name, url = source
