@@ -38,12 +38,12 @@ def sample():
                     "open":1.0,"high":2.0,"low":0.5,"close":1.5,"volume":10.0} for i in range(300)]
         timeframes[tf] = {"source_status":"ok","exchange":"OKX USDT Swap","retrieved_at":observed,"candles":candles}
     return {"generated_at":observed,"symbols":{
-      s: {"spot_price":{"price":100.0,"source":"Binance Spot: https://data-api.binance.vision","source_status":"ok","price_authority":"BINANCE","observed_at":observed,"cross_exchange":[{"source":"OKX USDT Swap","price":100.1,"observed_at":observed}]},
+      s: {"spot_price":{"price":100.0,"source":("Binance USD-M Futures perpetual ticker: https://fapi.binance.com" if s=="NVDAUSDT" else "Binance Spot: https://data-api.binance.vision"),"source_status":"ok","price_authority":("BINANCE_USDM_PERPETUAL" if s=="NVDAUSDT" else "BINANCE"),"observed_at":observed,"cross_exchange":[{"source":"OKX USDT Swap","price":100.1,"observed_at":observed}]},
           "timeframes":timeframes,
           "higher_timeframes":{"1w":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1w"),"wyckoff":{"status":"ok"}},
                                "1M":{"source_exchange":"OKX USDT Swap","source_timeframe":"1d","candles":higher_bars("1M"),"wyckoff":{"status":"ok"}}},
           "futures_context":{"funding_rate":{"status":"unavailable"},"open_interest":{"value":1000.0,"source":"OKX","observed_at":observed},"global_long_short_ratio":{"status":"unavailable"}}}
-      for s in ("BTCUSDT","ETHUSDT")}}
+      for s in ("BTCUSDT","ETHUSDT","NVDAUSDT")}}
 
 class MarketDataValidationTests(unittest.TestCase):
     def test_cross_exchange_live_ticker_basis_is_reported(self):
