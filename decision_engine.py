@@ -450,7 +450,7 @@ def _cross_asset_linkage(symbols):
     return output
 
 
-def _nvda_session_context():
+def _nvda_session_context(source="perpetual ticker"):
     from datetime import datetime
     try:
         from zoneinfo import ZoneInfo
@@ -459,7 +459,7 @@ def _nvda_session_context():
         regular = weekday and ((now.hour > 9 or (now.hour == 9 and now.minute >= 30))
                                and (now.hour < 16))
         status = "US regular session clock" if regular else ("weekday outside regular session" if weekday else "weekend")
-        return {"asset": "NVDAUSDT Binance USD-M perpetual", "contract_trading": "24/7",
+        return {"asset": "NVDAUSDT equity perpetual; quote source: " + str(source), "contract_trading": "24/7",
                 "us_equity_clock": status, "new_york_time": now.isoformat(),
                 "regular_session_window": "Monday-Friday 09:30-16:00 America/New_York",
                 "holiday_calendar_checked": False,
@@ -480,8 +480,10 @@ def analyze_dataset(data):
             continue
         analysis = analyze_symbol(item)
         if symbol == "NVDAUSDT":
-            analysis["asset_type"] = "Binance USD-M equity perpetual"
-            analysis["market_session_context"] = _nvda_session_context()
+            ticker_source = (item.get("spot_price") or {}).get("source") or "unavailable"
+            analysis["asset_type"] = "NVDAUSDT equity perpetual"
+            analysis["market_data_source"] = ticker_source
+            analysis["market_session_context"] = _nvda_session_context(ticker_source)
         result["symbols"][symbol] = analysis
     result["cross_asset_linkage"] = _cross_asset_linkage(data.get("symbols", {}))
     return result
