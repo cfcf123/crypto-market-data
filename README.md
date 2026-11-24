@@ -39,3 +39,8 @@ Requires Python 3.10+ and no third-party packages: `python collector.py`
 - Google News topic searches plus Federal Reserve, SEC and White House official RSS.
 - Feed health, links, publishers and publication times are retained. Headlines are not trading signals.
 - Structured economic calendar and live ETF/derivatives flow sources must be disclosed separately when unavailable.
+
+
+### NVDAUSDT price-source policy
+
+NVDAUSDT reference price uses a perpetual-contract ticker, not NVIDIA stock spot. Binance USD-M is tried first; if unavailable, the collector falls back to OKX USDT Swap and then Bybit Linear perpetual tickers. The source, contract instrument, quote type, and retrieval timestamp are retained. Equity spot quotes (e.g. Yahoo Finance/Nasdaq) may be used for separate stock-market context and cross-checks, but must never be substituted as an NVDAUSDT perpetual execution price. BTCUSDT and ETHUSDT continue to require Binance Spot as their primary reference price.
