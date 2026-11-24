@@ -374,8 +374,11 @@ def analyze_symbol(item):
         ("rebound_short", "left_rebound_short"),
         ("short", "right_breakdown_short"),
     ):
-        levels[key]["strategy_score"] = strategy_scores[strategy_key]
-        levels[key]["strategy_weight_pct"] = strategy_weights[strategy_key]
+        # A missing authoritative ticker deliberately suppresses price levels.
+        # Keep the evidence weights available without indexing absent setup blocks.
+        if isinstance(levels.get(key), dict):
+            levels[key]["strategy_score"] = strategy_scores[strategy_key]
+            levels[key]["strategy_weight_pct"] = strategy_weights[strategy_key]
     return {
         "weights_pct": weights,
         "strategy_weights_pct": strategy_weights,
