@@ -393,16 +393,84 @@ def analyze_symbol(item):
     }
 
 
+def _pearson(xs, ys):
+    if len(xs) < 3 or len(xs) != len(ys):
+        return None
+    mx, my = sum(xs)/len(xs), sum(ys)/len(ys)
+    vx = sum((x-mx)**2 for x in xs)
+    vy = sum((y-my)**2 for y in ys)
+    if vx <= 0 or vy <= 0:
+        return None
+    return sum((x-mx)*(y-my) for x,y in zip(xs,ys)) / math.sqrt(vx*vy)
+
+
+def _hourly_return_map(item):
+    candles = item.get("timeframes", {}).get("1h", {}).get("candles", [])
+    return {int(row["close_time"]): float(row["close"]) for row in candles
+            if _finite(row.get("close")) and float(row["close"]) > 0}
+
+
+def _cross_asset_linkage(symbols):
+    nvda = symbols.get("NVDAUSDT", {})
+    base = _hourly_return_map(nvda) if isinstance(nvda, dict) else {}
+    output = {"method": "Pearson correlation of synchronized 1h close-to-close returns",
+              "timeframes": {"24h": 24, "72h": 72, "168h": 168}, "pairs": {}}
+    for other in ("BTCUSDT", "ETHUSDT"):
+        item = symbols.get(other, {})
+        other_map = _hourly_return_map(item) if isinstance(item, dict) else {}
+        common = sorted(set(base) & set(other_map))
+        paired = []
+        for previous, current in zip(common, common[1:]):
+            if current - previous != 3600000:
+                continue
+            paired.append(((base[current]/base[previous])-1,
+                           (other_map[current]/other_map[previous])-1))
+        pair = {}
+        for label, window in output["timeframes"].items():
+            sample = paired[-window:]
+            value = _pearson([x[0] for x in sample], [x[1] for x in sample])
+            pair[label] = {"correlation": round(value, 4) if value is not None else None,
+                           "paired_hourly_returns": len(sample),
+                           "status": "calculated" if value is not None else "insufficient synchronized data"}
+        output["pairs"]["NVDAUSDT_vs_"+other] = pair
+    output["interpretation"] = "相关性是同步小时收益的统计关系，不代表因果或稳定领先关系；数据缺失时不补值。"
+    return output
+
+
+def _nvda_session_context():
+    from datetime import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo("America/New_York"))
+        weekday = now.weekday() < 5
+        regular = weekday and ((now.hour > 9 or (now.hour == 9 and now.minute >= 30))
+                               and (now.hour < 16))
+        status = "US regular session clock" if regular else ("weekday outside regular session" if weekday else "weekend")
+        return {"asset": "NVDAUSDT Binance USD-M perpetual", "contract_trading": "24/7",
+                "us_equity_clock": status, "new_york_time": now.isoformat(),
+                "regular_session_window": "Monday-Friday 09:30-16:00 America/New_York",
+                "holiday_calendar_checked": False,
+                "note": "该时段仅按纽约本地星期与时钟判断，未校验美股节假日；NVDAUSDT永续周末仍可交易，不能等同NVDA现货报价。"}
+    except Exception as exc:
+        return {"asset": "NVDAUSDT Binance USD-M perpetual", "contract_trading": "24/7",
+                "us_equity_clock": "unavailable", "reason": str(exc)}
+
+
 def analyze_dataset(data):
     result = {"generated_at": data.get("generated_at"),
-              "analysis_type": "multi_timeframe_evidence_fusion_v1",
+              "analysis_type": "multi_asset_timeframe_evidence_fusion_v2",
               "symbols": {}}
-    for symbol in ("BTCUSDT", "ETHUSDT"):
+    for symbol in ("BTCUSDT", "ETHUSDT", "NVDAUSDT"):
         item = data.get("symbols", {}).get(symbol)
         if not isinstance(item, dict):
             result["symbols"][symbol] = {"status": "unavailable", "reason": "missing symbol"}
             continue
-        result["symbols"][symbol] = analyze_symbol(item)
+        analysis = analyze_symbol(item)
+        if symbol == "NVDAUSDT":
+            analysis["asset_type"] = "Binance USD-M equity perpetual"
+            analysis["market_session_context"] = _nvda_session_context()
+        result["symbols"][symbol] = analysis
+    result["cross_asset_linkage"] = _cross_asset_linkage(data.get("symbols", {}))
     return result
 
 
