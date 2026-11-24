@@ -46,8 +46,9 @@ def validate(data, now=None):
         if spot.get("source_status") == "unavailable":
             if price is not None:
                 raise ValueError(f"{symbol}: unavailable spot source must not contain a substitute price")
-            if authority != "BINANCE_REQUIRED":
-                raise ValueError(f"{symbol}: unavailable spot source missing Binance-only authority marker")
+            expected_unavailable_authority = "BINANCE_USDM_PERPETUAL_REQUIRED" if symbol == "NVDAUSDT" else "BINANCE_REQUIRED"
+            if authority != expected_unavailable_authority:
+                raise ValueError(f"{symbol}: unavailable authoritative price source marker is invalid")
             spot_freshness = {"status":"unavailable","reason":spot.get("error","Binance Spot unavailable"),
                               "attempts":spot.get("attempts",[])}
         else:
