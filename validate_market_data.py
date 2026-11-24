@@ -6,7 +6,7 @@ from pathlib import Path
 
 DATA = Path("output/market-data.json")
 REPORT = Path("output/data-quality.json")
-SYMBOLS = ("BTCUSDT", "ETHUSDT")
+SYMBOLS = ("BTCUSDT", "ETHUSDT", "NVDAUSDT")
 REQUIRED_TFS = ("1d", "12h", "4h", "1h", "15m", "5m", "1m")
 MAX_CANDLE_AGE = {"1m":600,"5m":1200,"15m":2700,"1h":10800,"4h":43200,"12h":129600,"1d":129600}
 MAX_DATA_AGE_SECONDS = 600
@@ -53,10 +53,14 @@ def validate(data, now=None):
         else:
             if not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0:
                 raise ValueError(f"{symbol}: missing/invalid spot price")
-            if authority != "BINANCE" or not str(spot.get("source", "")).startswith("Binance Spot"):
-                raise ValueError(f"{symbol}: non-Binance spot price is not authoritative")
+            if symbol == "NVDAUSDT":
+                if authority != "BINANCE_USDM_PERPETUAL" or "Binance USD-M Futures perpetual ticker" not in str(spot.get("source", "")):
+                    raise ValueError(f"{symbol}: non-Binance USD-M perpetual ticker is not authoritative")
+            else:
+                if authority != "BINANCE" or not str(spot.get("source", "")).startswith("Binance Spot"):
+                    raise ValueError(f"{symbol}: non-Binance spot price is not authoritative")
             if spot.get("source_status") != "ok":
-                raise ValueError(f"{symbol}: invalid Binance spot source_status")
+                raise ValueError(f"{symbol}: invalid authoritative price source_status")
             if not spot.get("observed_at"):
                 raise ValueError(f"{symbol}: spot price missing observed_at timestamp")
             spot_age = (now - parse_dt(spot["observed_at"])).total_seconds()
