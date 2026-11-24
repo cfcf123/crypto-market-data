@@ -145,3 +145,20 @@ class HttpRetryPolicyTests(unittest.TestCase):
         with patch("collector.urllib.request.urlopen", return_value=Response()) as request:
             self.assertEqual(collector.get_json("https://example.test"), {"ok":True})
         request.assert_called_once()
+
+
+class NvdaPerpetualPriceTests(unittest.TestCase):
+    def test_nvda_reference_uses_binance_usdm_perpetual_ticker_not_spot(self):
+        from unittest.mock import patch
+        payload = {"symbol":"NVDAUSDT","price":"150.25"}
+        with patch("collector.get_json", return_value=payload) as request, \
+             patch("collector.validate_price_cross_exchange", return_value=[]) as cross:
+            result = collector.fetch_perpetual_price("NVDAUSDT")
+        self.assertIn("/fapi/v1/ticker/price?", request.call_args.args[0])
+        self.assertEqual(result["price"], 150.25)
+        self.assertEqual(result["price_authority"], "BINANCE_USDM_PERPETUAL")
+        self.assertIn("perpetual ticker", result["source"])
+        cross.assert_called_once_with("NVDAUSDT", 150.25)
+
+    def test_nvda_is_in_collected_symbol_set(self):
+        self.assertIn("NVDAUSDT", collector.SYMBOLS)
