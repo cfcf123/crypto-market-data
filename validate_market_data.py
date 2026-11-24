@@ -144,7 +144,11 @@ def validate(data, now=None):
         higher = item.get("higher_timeframes", {})
         daily_source = tfs.get("1d", {}).get("exchange")
         higher_report = {}
-        for htf, minimum, expected_days in (("1w", 42, 7), ("1M", 8, None)):
+        for htf, default_minimum, expected_days in (("1w", 42, 7), ("1M", 8, None)):
+            # NVDAUSDT is a newly listed equity perpetual; its own complete history
+            # is shorter than BTC/ETH. Use a lower, explicit structural floor rather
+            # than rejecting valid history or fabricating older candles.
+            minimum = (32 if htf == "1w" else 7) if symbol == "NVDAUSDT" else default_minimum
             entry = higher.get(htf, {}) if isinstance(higher, dict) else {}
             bars = entry.get("candles", [])
             if entry.get("source_exchange") != daily_source or entry.get("source_timeframe") != "1d":
