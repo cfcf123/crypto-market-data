@@ -157,6 +157,7 @@ class NvdaPerpetualPriceTests(unittest.TestCase):
         self.assertIn("/fapi/v1/ticker/price?", request.call_args.args[0])
         self.assertEqual(result["price"], 150.25)
         self.assertEqual(result["price_authority"], "BINANCE_USDM_PERPETUAL")
+        self.assertEqual(result["reference_price_type"], "perpetual_contract_last_price")
         self.assertIn("perpetual ticker", result["source"])
         cross.assert_called_once_with("NVDAUSDT", 150.25)
 
