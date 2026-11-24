@@ -120,3 +120,11 @@ The user explicitly requires that market data collection must NOT run every 10 m
 7. no_trade权重须随数据覆盖不足、周期冲突、策略质量偏低而上升。若所有策略质量均弱，应由no_trade占据主要权重；不得为了压低观望权重而人为抬高某一方向。
 8. 策略权重不是胜率、盈利概率、仓位比例或资金分配建议；不得直接按权重下单或按比例配置资金。策略质量分、权重、信号等级和实际触发状态必须分栏呈现。
 9. 报告与邮件均须包含BTC、ETH的四类策略权重和no_trade权重，并检查五项合计100.0%；字段缺失、非数值或合计错误时，明确标记策略权重生成/读取失败，不得自行编造补齐。
+
+
+## ChatGPT Actions lookup safeguard (permanent)
+- For this repository's push-triggered collection, the authoritative lookup is the GitHub Actions runs page fetched through the GitHub browser URL: https://github.com/cfcf123/crypto-market-data/actions/runs .
+- Do not use the dedicated commit-workflow-runs connector to decide whether a push run exists: that connector filters to pull-request-triggered runs and can return an empty list for a successful push run.
+- Do not infer that Actions failed merely because a connector lookup returned no rows. Query the Actions runs page, match the newest run by exact head_sha == the manual-trigger commit SHA, path == .github/workflows/collect.yml, and event == push.
+- A successful run must be verified through jobs, artifact metadata, artifact download, and the five-file integrity checks below. Report a connector/query limitation separately from a real workflow failure.
+- For NVDAUSDT, Binance USD-M is the preferred source when reachable, but the user explicitly permits non-Binance perpetual venues. If Binance is unavailable, use the configured validated perpetual fallback (OKX/Bybit); always label the actual quote and candle source. Never label an OKX/Bybit quote as Binance USD-M.
