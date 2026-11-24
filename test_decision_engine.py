@@ -218,6 +218,19 @@ class DecisionEngineTests(unittest.TestCase):
         self.assertEqual(result["strategy_weights_pct"]["left_rebound_short"], 0.0)
         self.assertGreater(result["strategy_weights_pct"]["no_trade"], 0.0)
 
+    def test_missing_authoritative_price_keeps_analysis_and_weights_without_levels(self):
+        item = make_item("bull")
+        item["spot_price"] = {
+            "source_status": "unavailable",
+            "price_authority": "BINANCE_USDM_PERPETUAL_REQUIRED",
+            "error": "Binance USD-M endpoint unavailable"
+        }
+        result = analyze_symbol(item)
+        self.assertEqual(result["levels"]["status"], "unavailable")
+        self.assertAlmostEqual(sum(result["strategy_weights_pct"].values()), 100.0, places=1)
+        self.assertEqual(result["strategy_weights_pct"]["left_pullback_long"], 0.0)
+        self.assertEqual(result["strategy_weights_pct"]["left_rebound_short"], 0.0)
+
     def test_dataset_missing_symbol_is_explicit(self):
         result = analyze_dataset({"symbols": {"BTCUSDT": make_item()}})
         self.assertEqual(result["symbols"]["ETHUSDT"]["status"], "unavailable")
