@@ -1,7 +1,7 @@
-request_id=manual-report-20261124-nvda-perpetual
+request_id=manual-report-20261124-1725
 requested_at_date=2026-11-24
 trigger=user-explicit-strict-task-request
-execution_id=nov24-nvdausdt-perpetual-addition-full-market-run
+execution_id=nov24-strict-full-report-1725
 collection_policy=push-only-fresh-run-no-reuse
 closed_candles_only=true
 price_authority=BTCUSDT_ETHUSDT_BINANCE_SPOT;NVDAUSDT_BINANCE_USDM_PERPETUAL_TICKER
