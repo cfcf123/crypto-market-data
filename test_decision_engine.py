@@ -225,3 +225,17 @@ class DecisionEngineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NvdaCrossAssetTests(unittest.TestCase):
+    def test_dataset_includes_nvda_and_explicit_linkage(self):
+        from decision_engine import analyze_dataset
+        result = analyze_dataset({"symbols": {
+            "BTCUSDT": make_item("bull"),
+            "ETHUSDT": make_item("bear"),
+            "NVDAUSDT": make_item("bull")
+        }})
+        self.assertIn("NVDAUSDT", result["symbols"])
+        self.assertEqual(result["symbols"]["NVDAUSDT"]["asset_type"], "Binance USD-M equity perpetual")
+        self.assertIn("NVDAUSDT_vs_BTCUSDT", result["cross_asset_linkage"]["pairs"])
+        self.assertIn("NVDAUSDT_vs_ETHUSDT", result["cross_asset_linkage"]["pairs"])
