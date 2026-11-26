@@ -1,7 +1,7 @@
-request_id=manual-report-20261126-0853
-requested_at_utc=2026-11-26T00:53:00Z
+request_id=manual-report-20261126-1612
+requested_at_utc=2026-11-26T08:12:00Z
 trigger=user-explicit-strict-task-request
-execution_id=nov26-strict-full-report-0853
+execution_id=nov26-strict-full-report-1612
 collection_policy=push-only-fresh-run-no-reuse
 closed_candles_only=true
 price_authority=BTCUSDT_ETHUSDT_BINANCE_SPOT;NVDAUSDT_BINANCE_USDM_PREFERRED_OKX_OR_BYBIT_USDT_PERPETUAL_FALLBACK
@@ -12,4 +12,5 @@ cross_asset_linkage=synchronized_1h_returns_pearson_24h_72h_168h_nvda_vs_btc_eth
 strategy_weights=left_pullback_long,right_breakout_long,left_rebound_short,right_breakdown_short,no_trade_sum_100
 safe_short_rules=pressure_rejection_and_breakdown_retest_confirmation
 btc_eth_engine=preserve_existing_scoring_and_strategy_rules
+ema20=not_a_veto_for_left_side_orders;independent_strategy_evaluation
 email_to=cao2026feng@outlook.com
