@@ -1,7 +1,7 @@
-request_id=manual-report-20261126-1612
-requested_at_utc=2026-11-26T08:12:00Z
+request_id=manual-report-20261126-2233
+requested_at_utc=2026-11-26T14:33:00Z
 trigger=user-explicit-strict-task-request
-execution_id=nov26-strict-full-report-1612
+execution_id=nov26-strict-full-report-2233
 collection_policy=push-only-fresh-run-no-reuse
 closed_candles_only=true
 price_authority=BTCUSDT_ETHUSDT_BINANCE_SPOT;NVDAUSDT_BINANCE_USDM_PREFERRED_OKX_OR_BYBIT_USDT_PERPETUAL_FALLBACK
