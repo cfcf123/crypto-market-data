@@ -97,6 +97,103 @@ def _timeframe_evidence(candles, metric):
     return _clamp(sum(points) / sum(abs(x) if x else 1.0 for x in points))
 
 
+def _category_direction_scores(item, timeframe_evidence, derivatives_adjustment):
+    """De-duplicate correlated timeframes and score trend, rebound, structure and context.
+
+    Fixed framework: trend 25%, rebound strength 25%, price structure 20%,
+    derivatives 15%, broader market context 15%. Missing categories are not
+    fabricated: available categories are renormalized and missing coverage
+    raises neutral weight.
+    """
+    category_weights = {
+        "trend": 0.25, "rebound_strength": 0.25, "price_structure": 0.20,
+        "derivatives": 0.15, "market_context": 0.15,
+    }
+
+    def mean_available(keys, weights=None):
+        rows = [(timeframe_evidence.get(k), (weights or {}).get(k, 1.0)) for k in keys]
+        rows = [(row["score"], weight) for row, weight in rows
+                if isinstance(row, dict) and row.get("score") is not None]
+        if not rows:
+            return None
+        return sum(score * weight for score, weight in rows) / sum(weight for _, weight in rows)
+
+    # Timeframe grouping prevents 1M/1w/1d/12h/4h/1h/15m from voting as
+    # seven independent copies of the same trend.
+    macro = mean_available(("1M", "1w", "1d"), {"1M": 1.0, "1w": 1.0, "1d": 1.0})
+    swing = mean_available(("12h", "4h"), {"12h": 1.0, "4h": 1.0})
+    tactical = mean_available(("1h", "15m"), {"1h": 1.0, "15m": 1.0})
+    trend_parts = [(macro, .25), (swing, .40), (tactical, .35)]
+    trend_parts = [(v, w) for v, w in trend_parts if v is not None]
+    trend_score = (sum(v*w for v, w in trend_parts) / sum(w for _, w in trend_parts)
+                   if trend_parts else None)
+
+    # Rebound is measured from actual recent closed-candle returns, normalized
+    # by ATR, with RSI/MACD as confirmation rather than standalone reversal calls.
+    rebound_parts = []
+    for tf, weight in (("4h", .50), ("1h", .30), ("15m", .20)):
+        block = item.get("timeframes", {}).get(tf, {})
+        candles = block.get("candles", [])
+        metric = block.get("indicators", {})
+        if len(candles) < 7 or not isinstance(metric, dict):
+            continue
+        atr = metric.get("atr14")
+        if not _finite(atr) or atr <= 0:
+            continue
+        start = float(candles[-7]["close"])
+        end = float(candles[-1]["close"])
+        if start <= 0:
+            continue
+        move_atr = (end - start) / float(atr)
+        return_score = math.tanh(move_atr / 1.5)
+        rsi = metric.get("rsi14")
+        rsi_score = _clamp((float(rsi)-50.0)/25.0) if _finite(rsi) else 0.0
+        macd, signal = metric.get("macd"), metric.get("macd_signal9")
+        macd_score = (1.0 if macd > signal else -1.0 if macd < signal else 0.0) if _finite(macd) and _finite(signal) else 0.0
+        rebound_parts.append((.60*return_score + .25*rsi_score + .15*macd_score, weight))
+    rebound_score = (sum(v*w for v, w in rebound_parts)/sum(w for _, w in rebound_parts)
+                     if rebound_parts else None)
+
+    # Position inside the recent 4h range supplies a simple, auditable structure
+    # proxy. It is deliberately not described as order-flow or volume profile.
+    four_hour = item.get("timeframes", {}).get("4h", {}).get("candles", [])
+    structure_score = None
+    if len(four_hour) >= 20:
+        window = four_hour[-20:]
+        hi = max(float(x["high"]) for x in window)
+        lo = min(float(x["low"]) for x in window)
+        close = float(window[-1]["close"])
+        if hi > lo:
+            structure_score = _clamp(2.0 * ((close-lo)/(hi-lo)) - 1.0)
+
+    context = item.get("futures_context", {})
+    has_derivatives = any(
+        isinstance(context.get(k), dict) and _finite(context[k].get("value"))
+        for k in ("funding_rate", "global_long_short_ratio")
+    ) if isinstance(context, dict) else False
+    derivatives_score = _clamp(derivatives_adjustment / 0.04) if has_derivatives else None
+
+    market = item.get("market_context", {})
+    market_value = market.get("directional_score") if isinstance(market, dict) else None
+    market_score = _clamp(float(market_value)) if _finite(market_value) else None
+
+    raw = {
+        "trend": trend_score,
+        "rebound_strength": rebound_score,
+        "price_structure": structure_score,
+        "derivatives": derivatives_score,
+        "market_context": market_score,
+    }
+    available = [(name, value, category_weights[name]) for name, value in raw.items()
+                 if value is not None]
+    coverage = sum(weight for _, _, weight in available)
+    combined = (sum(value*weight for _, value, weight in available)/coverage
+                if coverage else 0.0)
+    # Keep Wyckoff as a small bounded structural confirmation, not a substitute
+    # for missing market-context data.
+    return combined, raw, round(coverage, 4)
+
+
 def _wyckoff_adjustment(item):
     """Sequence-aware, bounded adjustment; confirmed tests outweigh candidates."""
     adjustment = 0.0
@@ -348,12 +445,27 @@ def analyze_symbol(item):
         weighted_score = 0.0
     wyckoff_adjustment, wyckoff_evidence = _wyckoff_adjustment(item)
     derivatives_adjustment, derivatives_context, derivatives_notes = _derivatives_adjustment(item)
-    final_score = _clamp(weighted_score + wyckoff_adjustment + derivatives_adjustment)
-    positive_weight = sum(TIMEFRAME_WEIGHTS[tf] for tf, row in evidence.items() if row["score"] is not None and row["score"] > 0)
-    negative_weight = sum(TIMEFRAME_WEIGHTS[tf] for tf, row in evidence.items() if row["score"] is not None and row["score"] < 0)
+    final_score, category_scores, category_coverage = _category_direction_scores(
+        item, evidence, derivatives_adjustment
+    )
+    final_score = _clamp(final_score + wyckoff_adjustment * 0.25)
+    # Conflict is now measured across independent evidence categories, not seven
+    # correlated timeframe votes.
+    category_weight_map = {
+        "trend": 0.25, "rebound_strength": 0.25, "price_structure": 0.20,
+        "derivatives": 0.15, "market_context": 0.15,
+    }
+    valid_categories = [(category_scores[k], category_weight_map[k])
+                        for k in category_weight_map if category_scores[k] is not None]
+    positive_weight = sum(w for score, w in valid_categories if score > 0)
+    negative_weight = sum(w for score, w in valid_categories if score < 0)
     conflict = (2 * min(positive_weight, negative_weight) / (positive_weight + negative_weight)
                 if positive_weight + negative_weight else 0.0)
-    neutral = _clamp(0.55 - 0.30 * abs(final_score) + 0.15 * conflict + 0.35 * (1.0 - available_weight), 0.25, 0.85)
+    neutral = _clamp(
+        0.50 - 0.30 * abs(final_score) + 0.20 * conflict
+        + 0.30 * (1.0 - available_weight) + 0.15 * (1.0 - category_coverage),
+        0.25, 0.85
+    )
     long_weight = (1 - neutral) * (1 + final_score) / 2
     short_weight = (1 - neutral) * (1 - final_score) / 2
     total = long_weight + short_weight + neutral
@@ -383,6 +495,10 @@ def analyze_symbol(item):
         "weights_pct": weights,
         "strategy_weights_pct": strategy_weights,
         "evidence_score": round(final_score, 4),
+        "direction_model": "balanced_categories_v1",
+        "category_scores": {k: (round(v, 4) if v is not None else None) for k, v in category_scores.items()},
+        "category_weights": {"trend": 25, "rebound_strength": 25, "price_structure": 20, "derivatives": 15, "market_context": 15},
+        "category_coverage_pct": round(category_coverage * 100, 1),
         "timeframe_conflict": round(conflict, 4),
         "available_weight_pct": round(available_weight * 100, 1),
         "timeframes": evidence,
