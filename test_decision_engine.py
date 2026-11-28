@@ -185,7 +185,7 @@ class DecisionEngineTests(unittest.TestCase):
             self.assertEqual(
                 weights["left_pullback_long"] + weights["right_breakout_long"]
                 + weights["left_rebound_short"] + weights["right_breakdown_short"]
-                + weights["no_trade"], 100.0
+                + weights["no_trade"], 100.0, places=9
             )
 
     def test_strategy_weights_are_attached_to_each_setup(self):
@@ -254,3 +254,30 @@ class NvdaCrossAssetTests(unittest.TestCase):
         self.assertIn("Binance Spot", result["symbols"]["NVDAUSDT"]["market_session_context"]["asset"])
         self.assertIn("NVDAUSDT_vs_BTCUSDT", result["cross_asset_linkage"]["pairs"])
         self.assertIn("NVDAUSDT_vs_ETHUSDT", result["cross_asset_linkage"]["pairs"])
+
+
+    def test_strong_countertrend_rebound_reduces_bearish_direction_weight(self):
+        baseline = analyze_symbol(make_item("bear"))
+        item = make_item("bear")
+        for tf in ("4h", "1h", "15m"):
+            candles = item["timeframes"][tf]["candles"]
+            for offset in range(7):
+                close = 90.0 + offset * 2.0
+                candles[-7 + offset].update({
+                    "open": close - 0.5, "high": close + 1.0,
+                    "low": close - 1.0, "close": close
+                })
+            item["timeframes"][tf]["indicators"].update({
+                "atr14": 2.0, "rsi14": 68.0,
+                "macd": 2.0, "macd_signal9": -1.0
+            })
+        rebound = analyze_symbol(item)
+        self.assertGreater(
+            rebound["category_scores"]["rebound_strength"],
+            baseline["category_scores"]["rebound_strength"]
+        )
+        self.assertLess(
+            rebound["weights_pct"]["short"],
+            baseline["weights_pct"]["short"]
+        )
+        self.assertEqual(rebound["direction_model"], "balanced_categories_v1")

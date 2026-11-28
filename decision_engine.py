@@ -131,7 +131,7 @@ def _category_direction_scores(item, timeframe_evidence, derivatives_adjustment)
     # Rebound is measured from actual recent closed-candle returns, normalized
     # by ATR, with RSI/MACD as confirmation rather than standalone reversal calls.
     rebound_parts = []
-    for tf, weight in (("4h", .50), ("1h", .30), ("15m", .20)):
+    for tf, weight, lookback in (("4h", .50, 18), ("1h", .30, 24), ("15m", .20, 24)):
         block = item.get("timeframes", {}).get(tf, {})
         candles = block.get("candles", [])
         metric = block.get("indicators", {})
@@ -140,17 +140,24 @@ def _category_direction_scores(item, timeframe_evidence, derivatives_adjustment)
         atr = metric.get("atr14")
         if not _finite(atr) or atr <= 0:
             continue
-        start = float(candles[-7]["close"])
-        end = float(candles[-1]["close"])
-        if start <= 0:
+        recent = candles[-min(lookback, len(candles)):]
+        trough_index = min(range(len(recent)), key=lambda i: float(recent[i]["low"]))
+        trough = float(recent[trough_index]["low"])
+        later = recent[trough_index+1:]
+        peak = max((float(row["high"]) for row in later), default=float(recent[-1]["high"]))
+        if trough <= 0:
             continue
-        move_atr = (end - start) / float(atr)
-        return_score = math.tanh(move_atr / 1.5)
+        # Capture the size of the rebound impulse even if price has since
+        # retraced, while net recovery from the trough prevents a stale rally
+        # from being mistaken for a fully intact reversal.
+        impulse_score = math.tanh(max(0.0, peak-trough) / float(atr) / 2.0)
+        net_score = math.tanh((float(candles[-1]["close"])-trough) / float(atr) / 2.0)
+        rebound_price_score = .55*impulse_score + .45*net_score
         rsi = metric.get("rsi14")
         rsi_score = _clamp((float(rsi)-50.0)/25.0) if _finite(rsi) else 0.0
         macd, signal = metric.get("macd"), metric.get("macd_signal9")
         macd_score = (1.0 if macd > signal else -1.0 if macd < signal else 0.0) if _finite(macd) and _finite(signal) else 0.0
-        rebound_parts.append((.60*return_score + .25*rsi_score + .15*macd_score, weight))
+        rebound_parts.append((.60*rebound_price_score + .25*rsi_score + .15*macd_score, weight))
     rebound_score = (sum(v*w for v, w in rebound_parts)/sum(w for _, w in rebound_parts)
                      if rebound_parts else None)
 
