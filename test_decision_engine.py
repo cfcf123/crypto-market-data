@@ -182,7 +182,7 @@ class DecisionEngineTests(unittest.TestCase):
             })
             self.assertAlmostEqual(sum(weights.values()), 100.0, places=1)
             self.assertEqual(weights, result["levels"]["strategy_weights_pct"])
-            self.assertEqual(
+            self.assertAlmostEqual(
                 weights["left_pullback_long"] + weights["right_breakout_long"]
                 + weights["left_rebound_short"] + weights["right_breakdown_short"]
                 + weights["no_trade"], 100.0, places=9
